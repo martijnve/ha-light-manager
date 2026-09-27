@@ -1,0 +1,13 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Light Manager",
+        "description": "Track the Home Assistant scene applied to each area and add a dimmable light per area that dims the scene's lights relative to their scene brightness."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Light Manager is already configured."
+    }
+  }
+}
