@@ -186,6 +186,10 @@ class SceneTracker:
         self._last_ha_activation: dict[str, float] = {}
         # area id -> cancel callback of a scheduled scene restore
         self._pending_restores: dict[str, CALLBACK_TYPE] = {}
+        # areas with a dim in progress, and the transition of a dim requested
+        # meanwhile
+        self._dimming: set[str] = set()
+        self._dim_again: dict[str, float | None] = {}
 
     # --- lifecycle ---------------------------------------------------------
 
@@ -302,13 +306,43 @@ class SceneTracker:
         factor: float | None = None,
         transition: float | None = None,
     ) -> None:
-        """Set the scene's lights to baseline x factor (turning them on)."""
+        """Set the scene's lights to baseline x factor (turning them on).
+
+        One dim per area runs at a time; requests arriving meanwhile (a slider
+        being dragged) only update the factor, and the running dim sends the
+        latest one when it is done, so commands don't pile up on the bridge.
+        """
         if (area := self._areas.get(area_id)) is None:
             _LOGGER.warning("No scene has been applied to area %s yet", area_id)
             return
         if factor is not None:
             area.factor = max(1 / 255, min(1.0, factor))
             self._schedule_save()
+        self._notify(area_id)
+        if area_id in self._dimming:
+            self._dim_again[area_id] = transition
+            return
+        self._dimming.add(area_id)
+        try:
+            while True:
+                await self._async_call(self._dim_calls(area, transition), transition)
+                if self._areas.get(area_id) is not area:
+                    # A scene was applied while we were dimming; our commands
+                    # may have reached the lights after it. Put the scene back.
+                    _LOGGER.debug("Scene applied during a dim of area %s", area_id)
+                    await self.async_restore_scene(area_id, force=True)
+                    return
+                if area_id not in self._dim_again:
+                    return
+                transition = self._dim_again.pop(area_id)
+        finally:
+            self._dimming.discard(area_id)
+            self._dim_again.pop(area_id, None)
+            self._notify(area_id)
+
+    def _dim_calls(
+        self, area: AreaScene, transition: float | None
+    ) -> list[tuple[str, dict[str, Any]]]:
         calls = []
         for eid, tl in area.lights.items():
             if not tl.on or not self._available(eid):
@@ -320,8 +354,7 @@ class SceneTracker:
             if transition is not None:
                 data[ATTR_TRANSITION] = transition
             calls.append((SERVICE_TURN_ON, data))
-        await self._async_call(calls, transition)
-        self._notify(area_id)
+        return calls
 
     async def async_turn_off(
         self, area_id: str, transition: float | None = None
@@ -460,8 +493,12 @@ class SceneTracker:
             self.hass, RESTORE_DELAY_SECONDS, _restore
         )
 
-    async def async_restore_scene(self, area_id: str) -> None:
-        """Set lights that are off their scene values back to them."""
+    async def async_restore_scene(self, area_id: str, force: bool = False) -> None:
+        """Set lights that are off their scene values back to them.
+
+        force: set every light, whatever its reported state (Hue reports
+        arrive 1-4 s after a command, so the state may not show it yet).
+        """
         # Dimmed again meanwhile: leave it.
         if (area := self._areas.get(area_id)) is None or area.factor < 1:
             _LOGGER.debug("Scene restore for area %s skipped", area_id)
@@ -474,7 +511,8 @@ class SceneTracker:
             if tl.on:
                 brightness = state.attributes.get(ATTR_BRIGHTNESS)
                 if (
-                    state.state == STATE_ON
+                    not force
+                    and state.state == STATE_ON
                     and brightness is not None
                     and abs(brightness - tl.baseline) <= BRIGHTNESS_TOLERANCE
                 ):
@@ -485,7 +523,7 @@ class SceneTracker:
                         {ATTR_ENTITY_ID: eid, ATTR_BRIGHTNESS: tl.baseline},
                     )
                 )
-            elif state.state == STATE_ON:
+            elif force or state.state == STATE_ON:
                 calls.append((SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid}))
         _LOGGER.debug(
             "Scene restore for area %s: %s",
@@ -498,9 +536,9 @@ class SceneTracker:
         )
         if calls:
             _LOGGER.info(
-                "Scene %s applied again: restoring %d light(s) to the scene",
-                area.scene_entity_id,
+                "Restoring %d light(s) to scene %s",
                 len(calls),
+                area.scene_entity_id,
             )
         await self._async_call(calls, None)
         self._notify(area_id)

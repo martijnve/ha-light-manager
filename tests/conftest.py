@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from typing import Any
 
 import pytest
@@ -24,7 +25,13 @@ def auto_enable_custom_integrations(enable_custom_integrations: None) -> None:
 
 
 class MockLight(LightEntity):
-    """Dimmable light that remembers the last brightness."""
+    """Dimmable light that remembers the last brightness.
+
+    Set `hold` to an asyncio.Event to keep the next turn_on pending until it is
+    set (a command stuck in the bridge's queue).
+    """
+
+    hold: asyncio.Event | None = None
 
     _attr_should_poll = False
     _attr_color_mode = ColorMode.BRIGHTNESS
@@ -39,6 +46,9 @@ class MockLight(LightEntity):
 
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Turn on."""
+        if (hold := self.hold) is not None:
+            self.hold = None
+            await hold.wait()
         self._attr_is_on = True
         if ATTR_BRIGHTNESS in kwargs:
             self._attr_brightness = kwargs[ATTR_BRIGHTNESS]
@@ -85,6 +95,14 @@ SCENES = [
         # No id: no registry entry, area comes from the lights.
         "name": "Cooking",
         "entities": {"light.lamp_d": {"state": "on", "brightness": 150}},
+    },
+    {
+        "id": "bright",
+        "name": "Bright",
+        "entities": {
+            "light.lamp_a": {"state": "on", "brightness": 250},
+            "light.lamp_b": {"state": "on", "brightness": 250},
+        },
     },
 ]
 

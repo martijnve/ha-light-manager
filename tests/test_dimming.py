@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 from unittest.mock import patch
 
 from homeassistant.core import Context, HomeAssistant
@@ -20,6 +21,12 @@ async def activate(hass: HomeAssistant, scene: str) -> None:
         "scene", "turn_on", {"entity_id": scene}, blocking=True, context=Context()
     )
     await hass.async_block_till_done()
+
+
+async def settle() -> None:
+    """Let pending tasks run without waiting for held (blocked) ones."""
+    for _ in range(20):
+        await asyncio.sleep(0)
 
 
 async def set_dimmer(hass: HomeAssistant, entity_id: str, **data) -> None:
@@ -284,3 +291,60 @@ async def test_untracked_scene_counts_as_manual(
     assert state.attributes["active_scene"] == "scene.evening"
     assert state.attributes["modified"] is True
     assert state.attributes["baseline"]["light.lamp_a"] == 50
+
+
+async def test_scene_during_dim_wins(
+    hass: HomeAssistant, entry: MockConfigEntry, lights
+) -> None:
+    """A dim still in flight when a scene is applied doesn't leave lights dimmed."""
+    await activate(hass, "scene.evening")
+    hold = asyncio.Event()
+    lights["lamp_a"].hold = hold
+    dim = hass.async_create_task(set_dimmer(hass, LIVING, brightness_pct=20))
+    await settle()
+
+    # Bright is applied while the dim command to lamp_a is still pending.
+    await hass.services.async_call(
+        "scene", "turn_on", {"entity_id": "scene.bright"}, blocking=False
+    )
+    await settle()
+    hold.set()
+    await dim
+    await hass.async_block_till_done()
+
+    assert brightness(hass, "light.lamp_a") == 250
+    assert brightness(hass, "light.lamp_b") == 250
+    assert hass.states.get(LIVING).attributes["active_scene"] == "scene.bright"
+
+
+async def test_slider_drag_coalesces(
+    hass: HomeAssistant, entry: MockConfigEntry, lights
+) -> None:
+    """Dims requested while one is running collapse into the latest one."""
+    await activate(hass, "scene.evening")
+    calls = []
+    original = type(lights["lamp_b"]).async_turn_on
+
+    async def counting(self, **kwargs):
+        if self.entity_id == "light.lamp_b":
+            calls.append(kwargs.get("brightness"))
+        await original(self, **kwargs)
+
+    hold = asyncio.Event()
+    lights["lamp_a"].hold = hold
+    with patch.object(type(lights["lamp_b"]), "async_turn_on", counting):
+        first = hass.async_create_task(set_dimmer(hass, LIVING, brightness_pct=80))
+        await settle()
+        for pct in (60, 40, 30):
+            await hass.services.async_call(
+                "light",
+                "turn_on",
+                {"entity_id": LIVING, "brightness_pct": pct},
+                blocking=True,
+            )
+        hold.set()
+        await first
+        await hass.async_block_till_done()
+
+    assert calls == [80, 30]
+    assert brightness(hass, "light.lamp_b") == 30
