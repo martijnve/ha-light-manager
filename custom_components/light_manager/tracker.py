@@ -39,6 +39,7 @@ from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import TrackStates, async_track_state_change_filtered
+from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 
 from .const import (
@@ -185,6 +186,8 @@ class SceneTracker:
                 EVENT_SCENE_RELOADED, self._async_on_scene_reload
             )
         )
+        # Stored scenes may have been deleted while we weren't running.
+        self._unsubs.append(async_at_started(self.hass, self._drop_missing_scenes))
         self._unsubs.append(
             self.hass.bus.async_listen(
                 er.EVENT_ENTITY_REGISTRY_UPDATED, self._async_on_registry_update
@@ -423,12 +426,45 @@ class SceneTracker:
 
     @callback
     def _async_on_scene_reload(self, event: Event) -> None:
+        self._drop_missing_scenes()
+        self._notify_areas_changed()
+
+    @callback
+    def _drop_missing_scenes(self, *_: Any) -> None:
+        """Stop tracking areas whose scene is no longer loaded."""
         platform = self.hass.data.get(HA_SCENE_PLATFORM_DATA)
         existing = set(platform.entities) if platform is not None else set()
+        # The reload re-adds scene entities with eager tasks, so they are in
+        # the platform again by now (tests/test_dimming.py pins this).
+        self._drop_areas_of(
+            {
+                area.scene_entity_id
+                for area in self._areas.values()
+                if area.scene_entity_id not in existing
+            }
+        )
+
+    @callback
+    def _async_on_registry_update(self, event: Event) -> None:
+        entity_id = event.data.get("entity_id")
+        if entity_id is not None and entity_id.startswith(f"{SCENE_DOMAIN}."):
+            # Deleting a UI scene removes its registry entry without a reload.
+            if event.data["action"] == "remove":
+                self._drop_areas_of({entity_id})
+            elif old_entity_id := event.data.get("old_entity_id"):
+                self._rename_scene(old_entity_id, entity_id)
+        if entity_id is None or entity_id.startswith(
+            (f"{SCENE_DOMAIN}.", f"{LIGHT_DOMAIN}.")
+        ):
+            self._notify_areas_changed()
+
+    @callback
+    def _drop_areas_of(self, scene_entity_ids: set[str]) -> None:
+        """Stop tracking areas whose active scene no longer exists."""
         gone = [
             area_id
             for area_id, area in self._areas.items()
-            if area.scene_entity_id not in existing
+            if area.scene_entity_id in scene_entity_ids
         ]
         for area_id in gone:
             _LOGGER.debug("Scene of area %s was removed; dropping tracking", area_id)
@@ -437,15 +473,14 @@ class SceneTracker:
         if gone:
             self._rebuild_light_index()
             self._schedule_save()
-        self._notify_areas_changed()
 
     @callback
-    def _async_on_registry_update(self, event: Event) -> None:
-        entity_id = event.data.get("entity_id")
-        if entity_id is None or entity_id.startswith(
-            (f"{SCENE_DOMAIN}.", f"{LIGHT_DOMAIN}.")
-        ):
-            self._notify_areas_changed()
+    def _rename_scene(self, old_entity_id: str, new_entity_id: str) -> None:
+        for area_id, area in self._areas.items():
+            if area.scene_entity_id == old_entity_id:
+                area.scene_entity_id = new_entity_id
+                self._schedule_save()
+                self._notify(area_id)
 
     # --- helpers -----------------------------------------------------------
 

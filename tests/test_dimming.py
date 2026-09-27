@@ -212,3 +212,54 @@ async def test_scene_removed_on_reload(
         await hass.services.async_call("scene", "reload", blocking=True)
         await hass.async_block_till_done()
     assert hass.states.get(LIVING).state == "unavailable"
+
+
+async def test_reload_keeping_scene_keeps_tracking(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Reloading scenes (e.g. after editing another scene) keeps tracking."""
+    await activate(hass, "scene.evening")
+    with patch(
+        "homeassistant.config.load_yaml_config_file",
+        return_value={"scene": SCENES},
+    ):
+        await hass.services.async_call("scene", "reload", blocking=True)
+        await hass.async_block_till_done()
+    assert hass.states.get(LIVING).attributes["active_scene"] == "scene.evening"
+
+
+async def test_scene_deleted_from_registry(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Deleting a UI scene removes its registry entry without a reload."""
+    await activate(hass, "scene.evening")
+    er.async_get(hass).async_remove("scene.evening")
+    await hass.async_block_till_done()
+    assert hass.states.get(LIVING).state == "unavailable"
+
+
+async def test_scene_renamed(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """An entity id rename of the tracked scene follows along."""
+    await activate(hass, "scene.evening")
+    er.async_get(hass).async_update_entity("scene.evening", new_entity_id="scene.night")
+    await hass.async_block_till_done()
+    assert hass.states.get(LIVING).attributes["active_scene"] == "scene.night"
+
+
+async def test_stored_scene_missing_at_start(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """A stored scene deleted while the entry was unloaded is dropped on setup."""
+    await activate(hass, "scene.evening")
+    assert await hass.config_entries.async_unload(entry.entry_id)
+    await hass.async_block_till_done()
+    with patch(
+        "homeassistant.config.load_yaml_config_file",
+        return_value={"scene": [SCENES[1]]},
+    ):
+        await hass.services.async_call("scene", "reload", blocking=True)
+        await hass.async_block_till_done()
+
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    assert hass.states.get(LIVING).state == "unavailable"
