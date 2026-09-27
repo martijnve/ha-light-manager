@@ -219,3 +219,21 @@ def test_scene_colors() -> None:
     red, warm = colors
     assert red[0] == 255 and red[1] < 100 and red[2] < 100
     assert warm[0] == 255 and warm[2] < warm[1] < warm[0]
+
+
+async def test_scene_light_colors(
+    hass: HomeAssistant, controller: FakeScenesController
+) -> None:
+    """Per light, the color the Hue scene sets (unknown lights left out)."""
+    from homeassistant.components.scene import DATA_COMPONENT
+
+    from custom_components.light_manager.hue import (
+        WARM_WHITE,
+        async_hue_scene_light_colors,
+    )
+
+    entity = hass.data[DATA_COMPONENT].get_entity(HUE_SCENE)
+    assert async_hue_scene_light_colors(hass, entity) == {
+        "light.lamp_a": WARM_WHITE,
+        "light.lamp_b": WARM_WHITE,
+    }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { reachableFirst, shortName } from "./room-dialog";
+import { reachable, shortName } from "./room-dialog";
 
 const hass = {
   states: {
@@ -10,12 +10,10 @@ const hass = {
 } as any;
 
 describe("room dialog helpers", () => {
-  it("puts unreachable lights last, keeping the order", () => {
-    expect(reachableFirst(hass, ["light.a", "light.b", "light.missing", "light.c"])).toEqual([
+  it("leaves out unreachable and unknown lights, keeping the order", () => {
+    expect(reachable(hass, ["light.a", "light.b", "light.missing", "light.c"])).toEqual([
       "light.b",
       "light.c",
-      "light.a",
-      "light.missing",
     ]);
   });
 

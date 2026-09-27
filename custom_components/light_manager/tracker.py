@@ -65,6 +65,7 @@ from .const import (
 from .hue import (
     WARM_WHITE,
     HueRecallWatcher,
+    async_hue_scene_light_colors,
     async_hue_scene_targets,
     hue_scene_colors,
     kelvin_rgb,
@@ -192,6 +193,21 @@ def _scene_colors(hass: HomeAssistant, entity: Any) -> list[tuple[int, int, int]
     return hue_scene_colors(entity)
 
 
+def _scene_light_colors(
+    hass: HomeAssistant, entity: Any
+) -> dict[str, tuple[int, int, int]]:
+    """The color a scene gives each of its lights, by entity id."""
+    if isinstance(
+        states := getattr(getattr(entity, "scene_config", None), "states", None), dict
+    ):
+        return {
+            eid: _state_rgb(state.attributes)
+            for eid, state in states.items()
+            if eid.startswith(f"{LIGHT_DOMAIN}.")
+        }
+    return async_hue_scene_light_colors(hass, entity)
+
+
 def _state_rgb(attributes: Mapping[str, Any]) -> tuple[int, int, int]:
     if rgb := attributes.get(ATTR_RGB_COLOR):
         return (int(rgb[0]), int(rgb[1]), int(rgb[2]))
@@ -309,11 +325,22 @@ class SceneTracker:
             if not targets or self._resolve_area(entity.entity_id, targets) != area_id:
                 continue
             name = entity.name if isinstance(entity.name, str) else None
+            light_colors = _scene_light_colors(self.hass, entity)
             scenes.append(
                 {
                     "entity_id": entity.entity_id,
                     "name": name or entity.entity_id,
                     "colors": _scene_colors(self.hass, entity)[:6],
+                    # What the scene sets per light, so the card can show it
+                    # straight away (Hue lamps report 1-4 s later).
+                    "lights": {
+                        eid: {
+                            "on": tl.on,
+                            "brightness": tl.baseline,
+                            "rgb": light_colors.get(eid),
+                        }
+                        for eid, tl in targets.items()
+                    },
                 }
             )
         lights = [

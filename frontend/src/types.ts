@@ -19,10 +19,18 @@ export interface HomeAssistant {
   themes?: { darkMode?: boolean };
 }
 
+/** What a scene sets on one light. */
+export interface SceneLight {
+  on: boolean;
+  brightness: number;
+  rgb: [number, number, number] | null;
+}
+
 export interface RoomScene {
   entity_id: string;
   name: string;
   colors: [number, number, number][];
+  lights?: Record<string, SceneLight>;
 }
 
 /** Result of the light_manager/room websocket command. */

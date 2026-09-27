@@ -127,6 +127,37 @@ class HueRecallWatcher:
         self._on_recall(entity_id, recalled_at.isoformat())
 
 
+@callback
+def async_hue_scene_light_colors(
+    hass: HomeAssistant, entity: Any
+) -> dict[str, tuple[int, int, int]]:
+    """The color a Hue scene gives each light it turns on, by entity id."""
+    if (actions := _actions(entity)) is None:
+        return {}
+    ent_reg = er.async_get(hass)
+    platform = entity.platform.platform_name
+    colors: dict[str, tuple[int, int, int]] = {}
+    try:
+        for action in actions:
+            if _value(action.target.rtype) != _LIGHT:
+                continue
+            entity_id = ent_reg.async_get_entity_id(_LIGHT, platform, action.target.rid)
+            if entity_id is None:
+                continue
+            feature = action.action
+            if feature.color is not None:
+                colors[entity_id] = _xy_rgb(feature.color.xy)
+            elif feature.color_temperature is not None and (
+                feature.color_temperature.mirek
+            ):
+                colors[entity_id] = _mirek_rgb(feature.color_temperature.mirek)
+            else:
+                colors[entity_id] = WARM_WHITE
+    except AttributeError:
+        return {}
+    return colors
+
+
 def hue_scene_colors(entity: Any) -> list[tuple[int, int, int]]:
     """RGB colors of a Hue scene: its palette, else the lights' actions."""
     resource = getattr(entity, "resource", None)

@@ -26,6 +26,12 @@ async def test_room(
     assert set(scenes) == {"scene.bright", "scene.evening"}
     # No colors in the YAML scenes: the lights that are on count as warm white.
     assert scenes["scene.evening"]["colors"] == [[252, 214, 140], [252, 214, 140]]
+    # Per light: what the scene sets, for the card's optimistic display.
+    assert scenes["scene.evening"]["lights"] == {
+        "light.lamp_a": {"on": True, "brightness": 200, "rgb": [252, 214, 140]},
+        "light.lamp_b": {"on": True, "brightness": 100, "rgb": [252, 214, 140]},
+        "light.lamp_c": {"on": False, "brightness": 255, "rgb": [252, 214, 140]},
+    }
 
     await client.send_json({"id": 2, "type": "light_manager/room", "area_id": "nope"})
     msg = await client.receive_json()

@@ -254,7 +254,7 @@ var v = class extends HTMLElement {
 v.elementStyles = [], v.shadowRootOptions = { mode: "open" }, v[g("elementProperties")] = /* @__PURE__ */ new Map(), v[g("finalized")] = /* @__PURE__ */ new Map(), ne?.({ ReactiveElement: v }), (h.reactiveElementVersions ??= []).push("2.1.2");
 //#endregion
 //#region node_modules/lit-html/lit-html.js
-var y = globalThis, ae = (e) => e, b = y.trustedTypes, oe = b ? b.createPolicy("lit-html", { createHTML: (e) => e }) : void 0, x = "$lit$", S = `lit$${Math.random().toFixed(9).slice(2)}$`, C = "?" + S, se = `<${C}>`, w = document, T = () => w.createComment(""), E = (e) => e === null || typeof e != "object" && typeof e != "function", D = Array.isArray, ce = (e) => D(e) || typeof e?.[Symbol.iterator] == "function", O = "[ 	\n\f\r]", k = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, le = /-->/g, ue = />/g, A = RegExp(`>|${O}(?:([^\\s"'>=/]+)(${O}*=${O}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`, "g"), de = /'/g, j = /"/g, fe = /^(?:script|style|textarea|title)$/i, M = ((e) => (t, ...n) => ({
+var y = globalThis, ae = (e) => e, b = y.trustedTypes, oe = b ? b.createPolicy("lit-html", { createHTML: (e) => e }) : void 0, x = "$lit$", S = `lit$${Math.random().toFixed(9).slice(2)}$`, C = "?" + S, se = `<${C}>`, w = document, T = () => w.createComment(""), E = (e) => e === null || typeof e != "object" && typeof e != "function", D = Array.isArray, ce = (e) => D(e) || typeof e?.[Symbol.iterator] == "function", O = "[ 	\n\f\r]", k = /<(?:(!--|\/[^a-zA-Z])|(\/?[a-zA-Z][^>\s]*)|(\/?$))/g, A = /-->/g, le = />/g, j = RegExp(`>|${O}(?:([^\\s"'>=/]+)(${O}*=${O}*(?:[^ \t\n\f\r"'\`<>=]|("|')|))|$)`, "g"), ue = /'/g, de = /"/g, fe = /^(?:script|style|textarea|title)$/i, M = ((e) => (t, ...n) => ({
 	_$litType$: e,
 	strings: t,
 	values: n
@@ -267,8 +267,8 @@ var he = (e, t) => {
 	let n = e.length - 1, r = [], i, a = t === 2 ? "<svg>" : t === 3 ? "<math>" : "", o = k;
 	for (let t = 0; t < n; t++) {
 		let n = e[t], s, c, l = -1, u = 0;
-		for (; u < n.length && (o.lastIndex = u, c = o.exec(n), c !== null);) u = o.lastIndex, o === k ? c[1] === "!--" ? o = le : c[1] === void 0 ? c[2] === void 0 ? c[3] !== void 0 && (o = A) : (fe.test(c[2]) && (i = RegExp("</" + c[2], "g")), o = A) : o = ue : o === A ? c[0] === ">" ? (o = i ?? k, l = -1) : c[1] === void 0 ? l = -2 : (l = o.lastIndex - c[2].length, s = c[1], o = c[3] === void 0 ? A : c[3] === "\"" ? j : de) : o === j || o === de ? o = A : o === le || o === ue ? o = k : (o = A, i = void 0);
-		let d = o === A && e[t + 1].startsWith("/>") ? " " : "";
+		for (; u < n.length && (o.lastIndex = u, c = o.exec(n), c !== null);) u = o.lastIndex, o === k ? c[1] === "!--" ? o = A : c[1] === void 0 ? c[2] === void 0 ? c[3] !== void 0 && (o = j) : (fe.test(c[2]) && (i = RegExp("</" + c[2], "g")), o = j) : o = le : o === j ? c[0] === ">" ? (o = i ?? k, l = -1) : c[1] === void 0 ? l = -2 : (l = o.lastIndex - c[2].length, s = c[1], o = c[3] === void 0 ? j : c[3] === "\"" ? de : ue) : o === de || o === ue ? o = j : o === A || o === le ? o = k : (o = j, i = void 0);
+		let d = o === j && e[t + 1].startsWith("/>") ? " " : "";
 		a += o === k ? n + se : l >= 0 ? (r.push(s), n.slice(0, l) + x + n.slice(l) + S + d) : n + S + (l === -2 ? t : d);
 	}
 	return [me(e, a + (e[n] || "<?>") + (t === 2 ? "</svg>" : t === 3 ? "</math>" : "")), r];
@@ -959,31 +959,65 @@ function Xe(e, t, n = !1) {
 		area_id: t
 	}), r.catch(() => Q.delete(t)), Q.set(t, r)), r;
 }
-function Ze(e, t) {
+var Ze = 6e3, $ = /* @__PURE__ */ new Map();
+function Qe(e, t, n) {
+	let r = n.lights ?? {};
+	return $.set(t.area_id, {
+		sceneId: n.entity_id,
+		lights: r,
+		seen: Object.fromEntries(Object.keys(r).map((t) => [t, e.states[t]?.last_updated])),
+		until: Date.now() + Ze
+	}), e.callService("scene", "turn_on", void 0, { entity_id: n.entity_id });
+}
+function $e(e, t, n) {
+	let r = $.get(t);
+	if (!r || Date.now() > r.until) return null;
+	let i = r.lights[n];
+	return !i || e.states[n]?.last_updated !== r.seen[n] ? null : i;
+}
+function et(e) {
+	let t = $.get(e);
+	return t && Date.now() <= t.until ? t.sceneId : null;
+}
+function tt(e, t, n) {
+	let r = e.states[n], i = r && r.state !== "unavailable" ? $e(e, t, n) : null;
+	return i ? {
+		color: i.on ? i.rgb ?? Ee : null,
+		brightness: i.brightness,
+		on: i.on,
+		state: r
+	} : {
+		color: ke(r),
+		brightness: r?.attributes.brightness ?? 255,
+		on: r?.state === "on",
+		state: r
+	};
+}
+function nt(e, t) {
 	let n = [], r = 0;
 	for (let i of t.lights) {
-		let t = e.states[i], a = ke(t);
-		a && (n.push(a), r = Math.max(r, t.attributes.brightness ?? 255));
+		let a = tt(e, t.area_id, i);
+		a.color && (n.push(a.color), r = Math.max(r, a.brightness));
 	}
-	let i = t.dimmer ? e.states[t.dimmer] : void 0, a = !!i && i.state !== "unavailable", o = a ? (i.attributes.brightness ?? 255) / 255 : r / 255;
+	let i = t.dimmer ? e.states[t.dimmer] : void 0, a = !!i && i.state !== "unavailable", o = et(t.area_id), s = o && i?.attributes.active_scene !== o ? 1 : a ? (i.attributes.brightness ?? 255) / 255 : r / 255;
 	return {
 		on: n.length > 0,
 		colors: Me(n),
-		level: n.length ? o : 0,
+		level: n.length ? s : 0,
 		dimmerAvailable: a,
-		activeScene: a ? i.attributes.active_scene ?? null : null
+		activeScene: o ?? (a ? i.attributes.active_scene ?? null : null)
 	};
 }
-function Qe(e, t, n, r) {
+function rt(e, t, n, r) {
 	return n.dimmerAvailable && t.dimmer ? e.callService("light", r ? "turn_on" : "turn_off", void 0, { entity_id: t.dimmer }) : e.callService("light", r ? "turn_on" : "turn_off", void 0, { entity_id: t.lights });
 }
-function $e(e, t, n, r) {
+function it(e, t, n, r) {
 	let i = Math.max(1, Math.round(r * 100)), a = n.dimmerAvailable && t.dimmer ? t.dimmer : t.lights;
 	return e.callService("light", "turn_on", { brightness_pct: i }, { entity_id: a });
 }
 //#endregion
 //#region src/room-dialog.ts
-var et = class extends H {
+var at = class extends H {
 	constructor(...e) {
 		super(...e), this._onPop = () => this.close(!1), this._onKey = (e) => e.key === "Escape" && this.close();
 	}
@@ -1004,7 +1038,7 @@ var et = class extends H {
 		this.isConnected && (this.remove(), e && history.state?.lightManagerDialog && history.back(), this.dispatchEvent(new CustomEvent("closed")));
 	}
 	render() {
-		let e = this.room, t = Ze(this.hass, e);
+		let e = this.room, t = nt(this.hass, e);
 		return M`<div class="backdrop" @click=${() => this.close()}></div>
       <div class="panel" role="dialog" aria-label=${e.name}>
         <header style=${Ke(t)}>
@@ -1014,17 +1048,19 @@ var et = class extends H {
               ${Z("mdi:arrow-left")}
             </button>
             <span class="title">${e.name}</span>
-            ${Je(t, (n) => Qe(this.hass, e, t, n.detail.on))}
+            ${Je(t, (n) => rt(this.hass, e, t, n.detail.on))}
           </div>
-          ${qe(t, (n) => $e(this.hass, e, t, n.detail.value))}
+          ${qe(t, (n) => it(this.hass, e, t, n.detail.value))}
         </header>
         <div class="body">
           ${e.scenes.length ? M`<h3>My scenes</h3>
-                <div class="scenes">
+                <div class="tiles">
                   ${e.scenes.map((e) => this._scene(e, e.entity_id === t.activeScene))}
                 </div>` : P}
-          ${e.lights.length ? M`<h3>Lights</h3>
-                <div class="lights">${tt(this.hass, e.lights).map((e) => this._light(e))}</div>` : P}
+          ${ot(this.hass, e.lights).length ? M`<h3>Lights</h3>
+                <div class="tiles">
+                  ${ot(this.hass, e.lights).map((e) => this._light(e))}
+                </div>` : P}
         </div>
       </div>`;
 	}
@@ -1033,11 +1069,11 @@ var et = class extends H {
 			255,
 			197,
 			143
-		]], r = n.length === 1 ? `radial-gradient(circle at 32% 28%, rgb(${Ae(n[0], .45).join(",")}), rgb(${n[0].join(",")}) 65%)` : `linear-gradient(135deg, ${n.map((e) => `rgb(${e.join(",")})`).join(", ")})`, i = $(e.name, this.room.name);
+		]], r = n.length === 1 ? `radial-gradient(circle at 32% 28%, rgb(${Ae(n[0], .45).join(",")}), rgb(${n[0].join(",")}) 65%)` : `linear-gradient(135deg, ${n.map((e) => `rgb(${e.join(",")})`).join(", ")})`, i = st(e.name, this.room.name);
 		return M`<button
       class="scene ${t ? "active" : ""}"
       style=${t ? `background: ${K(n)}; color: ${q(n)}` : ""}
-      @click=${() => this.hass.callService("scene", "turn_on", void 0, { entity_id: e.entity_id })}
+      @click=${() => this._apply(e)}
     >
       <span class="circle" style="background: ${r}">
         ${t ? M`<span class="playing">${Z("mdi:check")}</span>` : P}
@@ -1045,19 +1081,23 @@ var et = class extends H {
       <span class="label">${i}</span>
     </button>`;
 	}
+	_apply(e) {
+		Qe(this.hass, this.room, e), this._refreshAll(), window.clearTimeout(this._optimisticTimer), this._optimisticTimer = window.setTimeout(() => this._refreshAll(), Ze + 50);
+	}
+	_refreshAll() {
+		this.requestUpdate(), this.card?.requestUpdate();
+	}
 	_light(e) {
-		let t = this.hass.states[e], n = $(t?.attributes.friendly_name ?? e, this.room.name), r = !t || t.state === "unavailable", i = ke(t), a = (t?.attributes.brightness ?? 255) / 255, o = i ? `linear-gradient(to bottom, rgb(${W(i, a).join(",")}), rgb(${W(i, a * .7).join(",")}))` : "#3a3a3a", s = i ? `color: ${q([i], a)}` : "";
+		let t = tt(this.hass, this.room.area_id, e), n = t.state, r = st(n?.attributes.friendly_name ?? e, this.room.name), i = t.color, a = t.brightness / 255, o = i ? `linear-gradient(to bottom, rgb(${W(i, a).join(",")}), rgb(${W(i, a * .7).join(",")}))` : "#3a3a3a", s = i ? `color: ${q([i], a)}` : "";
 		return M`<div class="light ${i ? "on" : ""}" style=${s} @click=${() => this._moreInfo(e)}>
       <lm-fade .background=${o}></lm-fade>
       <div class="top">
-        ${t ? M`<ha-state-icon .hass=${this.hass} .stateObj=${t}></ha-state-icon>` : Z("mdi:lightbulb")}
-        <span class="lname">${n}</span>
-        ${r ? M`<span class="sub">Unreachable</span>` : P}
+        ${n ? M`<ha-state-icon .hass=${this.hass} .stateObj=${n}></ha-state-icon>` : Z("mdi:lightbulb")}
+        <span class="lname">${r}</span>
       </div>
       <div class="bottom">
         <lm-toggle
-          .on=${t?.state === "on"}
-          ?disabled=${r}
+          .on=${t.on}
           @change=${(t) => this.hass.callService("light", t.detail.on ? "turn_on" : "turn_off", void 0, { entity_id: e })}
         ></lm-toggle>
       </div>
@@ -1161,7 +1201,8 @@ var et = class extends H {
         color: #a8a8a8;
         margin: 22px 4px 12px;
       }
-      .scenes {
+      /* Scenes and lights: the same grid and tile size. */
+      .tiles {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
         gap: 8px;
@@ -1173,8 +1214,10 @@ var et = class extends H {
         display: flex;
         flex-direction: column;
         align-items: center;
+        justify-content: center;
         gap: 6px;
-        min-height: 100px;
+        height: 120px;
+        box-sizing: border-box;
         color: #fff;
       }
       .circle {
@@ -1203,16 +1246,8 @@ var et = class extends H {
         text-align: center;
         overflow-wrap: anywhere;
       }
-      .lights {
-        display: flex;
-        gap: 10px;
-        overflow-x: auto;
-        padding-bottom: 6px;
-        scroll-snap-type: x proximity;
-      }
       .light {
-        flex: 0 0 116px;
-        height: 150px;
+        height: 120px;
         border-radius: 12px;
         background: #3a3a3a;
         color: #fff;
@@ -1220,7 +1255,6 @@ var et = class extends H {
         flex-direction: column;
         overflow: hidden;
         cursor: pointer;
-        scroll-snap-align: start;
         position: relative;
         transition: color 0.8s;
       }
@@ -1231,48 +1265,44 @@ var et = class extends H {
         align-items: center;
         justify-content: center;
         gap: 4px;
-        padding: 10px 8px 4px;
+        padding: 8px 4px 2px;
         text-align: center;
       }
       .lname {
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         line-height: 1.2;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-      }
-      .sub {
-        font-size: 0.8rem;
-        opacity: 0.75;
+        overflow-wrap: anywhere;
       }
       .bottom {
         background: rgba(0, 0, 0, 0.12);
         display: flex;
         justify-content: center;
-        padding: 10px 0;
+        padding: 5px 0;
       }
       ha-state-icon {
-        --mdc-icon-size: 30px;
+        --mdc-icon-size: 24px;
       }
     `];
 	}
 };
-function tt(e, t) {
-	let n = (t) => {
+function ot(e, t) {
+	return t.filter((t) => {
 		let n = e.states[t];
-		return !n || n.state === "unavailable";
-	};
-	return [...t.filter((e) => !n(e)), ...t.filter(n)];
+		return !!n && n.state !== "unavailable";
+	});
 }
-function $(e, t) {
+function st(e, t) {
 	let n = `${t} `;
 	return e.toLowerCase().startsWith(n.toLowerCase()) ? e.slice(n.length) : e;
 }
-customElements.get("light-manager-room-dialog") || customElements.define("light-manager-room-dialog", et);
+customElements.get("light-manager-room-dialog") || customElements.define("light-manager-room-dialog", at);
 //#endregion
 //#region src/light-manager-card.ts
-var nt = class extends H {
+var ct = class extends H {
 	static {
 		this.properties = {
 			hass: { attribute: !1 },
@@ -1311,15 +1341,15 @@ var nt = class extends H {
 	render() {
 		if (this._error) return M`<ha-card class="error">Light Manager: ${this._error}</ha-card>`;
 		if (!this._room || !this.hass) return M`<ha-card class="loading"></ha-card>`;
-		let e = this._room, t = Ze(this.hass, e);
+		let e = this._room, t = nt(this.hass, e);
 		return M`<ha-card style=${Ke(t)} @click=${this._open}>
       <lm-fade .background=${Ge(t)}></lm-fade>
       <div class="row">
         <span class="icon">${Z(this._config.icon ?? e.icon ?? "mdi:sofa")}</span>
         <span class="name">${this._config.name ?? e.name}</span>
-        ${Je(t, (n) => Qe(this.hass, e, t, n.detail.on))}
+        ${Je(t, (n) => rt(this.hass, e, t, n.detail.on))}
       </div>
-      ${qe(t, (n) => $e(this.hass, e, t, n.detail.value))}
+      ${qe(t, (n) => it(this.hass, e, t, n.detail.value))}
     </ha-card>`;
 	}
 	willUpdate(e) {
@@ -1386,10 +1416,10 @@ var nt = class extends H {
     `];
 	}
 };
-customElements.get("light-manager-card") || customElements.define("light-manager-card", nt), window.customCards = window.customCards || [], window.customCards.push({
+customElements.get("light-manager-card") || customElements.define("light-manager-card", ct), window.customCards = window.customCards || [], window.customCards.push({
 	type: "light-manager-card",
 	name: "Light Manager room",
 	description: "A room colored by its lights, with the Light Manager scene dimmer"
 });
 //#endregion
-export { nt as LightManagerCard };
+export { ct as LightManagerCard };

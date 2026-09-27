@@ -53,7 +53,12 @@ const rooms: Record<string, Room> = {
       { entity_id: "scene.woonkamer_was", name: "was", colors: [[255, 197, 143]] },
       { entity_id: "scene.woonkamer_tropical_twilight", name: "Tropical twilight", colors: [[120, 50, 160], [240, 90, 60], [255, 170, 60]] },
       { entity_id: "scene.woonkamer_savanna_sunset", name: "Savanna sunset", colors: [[255, 70, 30], [255, 150, 60], [220, 210, 120]] },
-      { entity_id: "scene.woonkamer_tokyo", name: "Tokyo", colors: [[60, 40, 200], [220, 40, 160], [40, 180, 230]] },
+      { entity_id: "scene.woonkamer_tokyo", name: "Tokyo", colors: [[60, 40, 200], [220, 40, 160], [40, 180, 230]],
+        lights: {
+          "light.zolder_zo_rgb": { on: true, brightness: 230, rgb: [60, 40, 200] },
+          "light.hue_go_1": { on: true, brightness: 230, rgb: [220, 40, 160] },
+          "light.hue_lightstrip_1": { on: true, brightness: 230, rgb: [40, 180, 230] },
+        } },
       { entity_id: "scene.woonkamer_bright_2", name: "Bright 2", colors: [[255, 205, 120]] },
       { entity_id: "scene.woonkamer_avond_2", name: "Avond", colors: [[255, 220, 150]] },
       { entity_id: "scene.woonkamer_spring_blossom", name: "Spring blossom", colors: [[250, 170, 200], [255, 220, 230], [200, 120, 170]] },

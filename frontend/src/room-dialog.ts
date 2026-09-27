@@ -1,9 +1,9 @@
 import { css, html, LitElement, nothing } from "lit";
 import type { RGB } from "./color";
-import { dim, gradient, lightColor, mix, textColor } from "./color";
+import { dim, gradient, mix, textColor } from "./color";
 import "./fade";
 import { icon, roomBackground, roomStyle, sharedStyles, slider, toggle } from "./header";
-import { dimRoom, fetchRoom, roomState, toggleRoom } from "./room";
+import { applyScene, dimRoom, fetchRoom, OPTIMISTIC_MS, roomState, shownLight, toggleRoom } from "./room";
 import type { HomeAssistant, Room, RoomScene } from "./types";
 
 /** Full-screen room view: header, scenes and lights (appended to <body>). */
@@ -62,13 +62,15 @@ export class LightManagerRoomDialog extends LitElement {
         <div class="body">
           ${room.scenes.length
             ? html`<h3>My scenes</h3>
-                <div class="scenes">
+                <div class="tiles">
                   ${room.scenes.map((scene) => this._scene(scene, scene.entity_id === state.activeScene))}
                 </div>`
             : nothing}
-          ${room.lights.length
+          ${reachable(this.hass, room.lights).length
             ? html`<h3>Lights</h3>
-                <div class="lights">${reachableFirst(this.hass, room.lights).map((id) => this._light(id))}</div>`
+                <div class="tiles">
+                  ${reachable(this.hass, room.lights).map((id) => this._light(id))}
+                </div>`
             : nothing}
         </div>
       </div>`;
@@ -84,7 +86,7 @@ export class LightManagerRoomDialog extends LitElement {
     return html`<button
       class="scene ${active ? "active" : ""}"
       style=${active ? `background: ${gradient(colors)}; color: ${textColor(colors)}` : ""}
-      @click=${() => this.hass.callService("scene", "turn_on", undefined, { entity_id: scene.entity_id })}
+      @click=${() => this._apply(scene)}
     >
       <span class="circle" style="background: ${circle}">
         ${active ? html`<span class="playing">${icon("mdi:check")}</span>` : nothing}
@@ -93,12 +95,27 @@ export class LightManagerRoomDialog extends LitElement {
     </button>`;
   }
 
+  private _apply(scene: RoomScene) {
+    applyScene(this.hass, this.room, scene);
+    this._refreshAll();
+    // Show the real states again once the optimistic window is over.
+    window.clearTimeout(this._optimisticTimer);
+    this._optimisticTimer = window.setTimeout(() => this._refreshAll(), OPTIMISTIC_MS + 50);
+  }
+
+  private _optimisticTimer: number | undefined;
+
+  private _refreshAll() {
+    this.requestUpdate();
+    (this.card as LitElement | undefined)?.requestUpdate();
+  }
+
   private _light(entityId: string) {
-    const s = this.hass.states[entityId];
+    const shown = shownLight(this.hass, this.room.area_id, entityId);
+    const s = shown.state;
     const name = shortName(s?.attributes.friendly_name ?? entityId, this.room.name);
-    const unavailable = !s || s.state === "unavailable";
-    const color = lightColor(s);
-    const level = (s?.attributes.brightness ?? 255) / 255;
+    const color = shown.color;
+    const level = shown.brightness / 255;
     const background = color
       ? `linear-gradient(to bottom, rgb(${dim(color, level).join(",")}), rgb(${dim(color, level * 0.7).join(",")}))`
       : "#3a3a3a";
@@ -110,12 +127,10 @@ export class LightManagerRoomDialog extends LitElement {
           ? html`<ha-state-icon .hass=${this.hass} .stateObj=${s}></ha-state-icon>`
           : icon("mdi:lightbulb")}
         <span class="lname">${name}</span>
-        ${unavailable ? html`<span class="sub">Unreachable</span>` : nothing}
       </div>
       <div class="bottom">
         <lm-toggle
-          .on=${s?.state === "on"}
-          ?disabled=${unavailable}
+          .on=${shown.on}
           @change=${(ev: CustomEvent) =>
             this.hass.callService("light", ev.detail.on ? "turn_on" : "turn_off", undefined, {
               entity_id: entityId,
@@ -224,7 +239,8 @@ export class LightManagerRoomDialog extends LitElement {
         color: #a8a8a8;
         margin: 22px 4px 12px;
       }
-      .scenes {
+      /* Scenes and lights: the same grid and tile size. */
+      .tiles {
         display: grid;
         grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
         gap: 8px;
@@ -236,8 +252,10 @@ export class LightManagerRoomDialog extends LitElement {
         display: flex;
         flex-direction: column;
         align-items: center;
+        justify-content: center;
         gap: 6px;
-        min-height: 100px;
+        height: 120px;
+        box-sizing: border-box;
         color: #fff;
       }
       .circle {
@@ -266,16 +284,8 @@ export class LightManagerRoomDialog extends LitElement {
         text-align: center;
         overflow-wrap: anywhere;
       }
-      .lights {
-        display: flex;
-        gap: 10px;
-        overflow-x: auto;
-        padding-bottom: 6px;
-        scroll-snap-type: x proximity;
-      }
       .light {
-        flex: 0 0 116px;
-        height: 150px;
+        height: 120px;
         border-radius: 12px;
         background: #3a3a3a;
         color: #fff;
@@ -283,7 +293,6 @@ export class LightManagerRoomDialog extends LitElement {
         flex-direction: column;
         overflow: hidden;
         cursor: pointer;
-        scroll-snap-align: start;
         position: relative;
         transition: color 0.8s;
       }
@@ -294,41 +303,37 @@ export class LightManagerRoomDialog extends LitElement {
         align-items: center;
         justify-content: center;
         gap: 4px;
-        padding: 10px 8px 4px;
+        padding: 8px 4px 2px;
         text-align: center;
       }
       .lname {
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         line-height: 1.2;
         display: -webkit-box;
         -webkit-line-clamp: 2;
         -webkit-box-orient: vertical;
         overflow: hidden;
-      }
-      .sub {
-        font-size: 0.8rem;
-        opacity: 0.75;
+        overflow-wrap: anywhere;
       }
       .bottom {
         background: rgba(0, 0, 0, 0.12);
         display: flex;
         justify-content: center;
-        padding: 10px 0;
+        padding: 5px 0;
       }
       ha-state-icon {
-        --mdc-icon-size: 30px;
+        --mdc-icon-size: 24px;
       }
     `,
   ];
 }
 
-/** Lights that are reachable first, unreachable ones last (order kept). */
-export function reachableFirst(hass: HomeAssistant, ids: string[]): string[] {
-  const unreachable = (id: string) => {
+/** Only the lights that are reachable (order kept). */
+export function reachable(hass: HomeAssistant, ids: string[]): string[] {
+  return ids.filter((id) => {
     const s = hass.states[id];
-    return !s || s.state === "unavailable";
-  };
-  return [...ids.filter((id) => !unreachable(id)), ...ids.filter(unreachable)];
+    return !!s && s.state !== "unavailable";
+  });
 }
 
 /** "Woonkamer Tokyo" in room "Woonkamer" -> "Tokyo". */
