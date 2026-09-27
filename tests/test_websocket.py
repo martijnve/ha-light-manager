@@ -37,3 +37,21 @@ async def test_room(
     msg = await client.receive_json()
     assert not msg["success"]
     assert msg["error"]["code"] == "not_found"
+
+
+async def test_room_excludes_labelled_lights(
+    hass: HomeAssistant, entry: MockConfigEntry, hass_ws_client
+) -> None:
+    """Lights labelled light-manager-excluded (entity or device) are left out."""
+    from homeassistant.helpers import entity_registry as er
+    from homeassistant.helpers import label_registry as lr
+
+    label = lr.async_get(hass).async_create("light-manager-excluded")
+    er.async_get(hass).async_update_entity("light.lamp_c", labels={label.label_id})
+
+    client = await hass_ws_client(hass)
+    await client.send_json(
+        {"id": 1, "type": "light_manager/room", "area_id": area_id(hass, "Living room")}
+    )
+    msg = await client.receive_json()
+    assert msg["result"]["lights"] == ["light.lamp_a", "light.lamp_b"]

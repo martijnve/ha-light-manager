@@ -43,6 +43,7 @@ from homeassistant.core import (
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
+from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.event import (
     TrackStates,
     async_call_later,
@@ -57,6 +58,8 @@ from .const import (
     COMMAND_GRACE_SECONDS,
     DOMAIN,
     EVENT_SCENE_RELOADED,
+    EXCLUDE_LABEL_ID,
+    EXCLUDE_LABEL_NAME,
     HA_SCENE_PLATFORM_DATA,
     SAVE_DELAY,
     STORAGE_KEY,
@@ -343,6 +346,8 @@ class SceneTracker:
                     },
                 }
             )
+        excluded = self._excluded_label_ids()
+        dev_reg = dr.async_get(self.hass)
         lights = [
             entry.entity_id
             for entry in ent_reg.entities.values()
@@ -351,6 +356,12 @@ class SceneTracker:
             and not entry.disabled_by
             and not entry.hidden_by
             and self._entity_area(entry.entity_id) == area_id
+            and not entry.labels & excluded
+            and not (
+                entry.device_id
+                and (device := dev_reg.async_get(entry.device_id))
+                and device.labels & excluded
+            )
         ]
         return {
             "area_id": area_id,
@@ -360,6 +371,14 @@ class SceneTracker:
             "scenes": sorted(scenes, key=lambda scene: scene["name"].lower()),
             "lights": sorted(lights),
         }
+
+    @callback
+    def _excluded_label_ids(self) -> set[str]:
+        """Label ids that keep a light out of the card's rooms."""
+        ids = {EXCLUDE_LABEL_ID}
+        if label := lr.async_get(self.hass).async_get_label_by_name(EXCLUDE_LABEL_NAME):
+            ids.add(label.label_id)
+        return ids
 
     def is_on(self, area_id: str) -> bool:
         """Whether any light of the area's scene is on."""

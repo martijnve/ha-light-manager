@@ -22,7 +22,7 @@ area: woonkamer   # area id
 # icon: mdi:sofa      (optional, default: the area's icon)
 ```
 
-The integration serves and registers the card itself; no separate resource is needed. Hue scene pictures aren't available to Home Assistant, so scenes show their colors instead.
+The integration serves and registers the card itself; no separate resource is needed. Lights labelled `light-manager-excluded` (on the entity or its device) are left out of the card's rooms, e.g. status LEDs that sit in the area. Hue scene pictures aren't available to Home Assistant, so scenes show their colors instead.
 
 ## Install
 

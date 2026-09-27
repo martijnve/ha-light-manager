@@ -4,6 +4,11 @@ from typing import Final
 
 DOMAIN: Final = "light_manager"
 
+# Lights with this label (on the entity or its device) are left out of the
+# card's rooms, e.g. status LEDs that happen to be in the area.
+EXCLUDE_LABEL_NAME: Final = "light-manager-excluded"
+EXCLUDE_LABEL_ID: Final = "light_manager_excluded"
+
 # The dashboard card, served by the integration.
 CARD_URL: Final = "/light_manager/light-manager-card.js"
 
