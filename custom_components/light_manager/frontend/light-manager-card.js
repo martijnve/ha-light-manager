@@ -853,7 +853,7 @@ var Ie = class extends W {
                   ${e.scenes.map((e) => this._scene(e, e.entity_id === t.activeScene))}
                 </div>` : F}
           ${e.lights.length ? N`<h3>Lights</h3>
-                <div class="lights">${e.lights.map((e) => this._light(e))}</div>` : F}
+                <div class="lights">${Le(this.hass, e.lights).map((e) => this._light(e))}</div>` : F}
         </div>
       </div>`;
 	}
@@ -862,7 +862,7 @@ var Ie = class extends W {
 			255,
 			197,
 			143
-		]], r = n.length === 1 ? `radial-gradient(circle at 32% 28%, rgb(${q(n[0], .45).join(",")}), rgb(${n[0].join(",")}) 65%)` : `linear-gradient(135deg, ${n.map((e) => `rgb(${e.join(",")})`).join(", ")})`, i = Le(e.name, this.room.name);
+		]], r = n.length === 1 ? `radial-gradient(circle at 32% 28%, rgb(${q(n[0], .45).join(",")}), rgb(${n[0].join(",")}) 65%)` : `linear-gradient(135deg, ${n.map((e) => `rgb(${e.join(",")})`).join(", ")})`, i = Re(e.name, this.room.name);
 		return N`<button
       class="scene ${t ? "active" : ""}"
       style=${t ? `background: ${Ee(n)}; color: ${X(n)}` : ""}
@@ -875,7 +875,7 @@ var Ie = class extends W {
     </button>`;
 	}
 	_light(e) {
-		let t = this.hass.states[e], n = Le(t?.attributes.friendly_name ?? e, this.room.name), r = !t || t.state === "unavailable", i = K(t), a = (t?.attributes.brightness ?? 255) / 255, o = i ? `background: linear-gradient(to bottom, rgb(${J(i, a).join(",")}), rgb(${J(i, a * .7).join(",")})); color: ${X([i], a)}` : "";
+		let t = this.hass.states[e], n = Re(t?.attributes.friendly_name ?? e, this.room.name), r = !t || t.state === "unavailable", i = K(t), a = (t?.attributes.brightness ?? 255) / 255, o = i ? `background: linear-gradient(to bottom, rgb(${J(i, a).join(",")}), rgb(${J(i, a * .7).join(",")})); color: ${X([i], a)}` : "";
 		return N`<div class="light ${i ? "on" : ""}" style=${o} @click=${() => this._moreInfo(e)}>
       <div class="top">
         ${t ? N`<ha-state-icon .hass=${this.hass} .stateObj=${t}></ha-state-icon>` : Q("mdi:lightbulb")}
@@ -986,23 +986,23 @@ var Ie = class extends W {
       }
       .scenes {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+        gap: 8px;
       }
       .scene {
         background: #3a3a3a;
         border-radius: 12px;
-        padding: 12px 6px 10px;
+        padding: 10px 4px 8px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 8px;
-        min-height: 124px;
+        gap: 6px;
+        min-height: 100px;
         color: #fff;
       }
       .circle {
-        width: 58px;
-        height: 58px;
+        width: 46px;
+        height: 46px;
         border-radius: 50%;
         flex: none;
         display: flex;
@@ -1021,7 +1021,7 @@ var Ie = class extends W {
         color: #fff;
       }
       .label {
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         line-height: 1.2;
         text-align: center;
         overflow-wrap: anywhere;
@@ -1080,13 +1080,20 @@ var Ie = class extends W {
 	}
 };
 function Le(e, t) {
+	let n = (t) => {
+		let n = e.states[t];
+		return !n || n.state === "unavailable";
+	};
+	return [...t.filter((e) => !n(e)), ...t.filter(n)];
+}
+function Re(e, t) {
 	let n = `${t} `;
 	return e.toLowerCase().startsWith(n.toLowerCase()) ? e.slice(n.length) : e;
 }
 customElements.get("light-manager-room-dialog") || customElements.define("light-manager-room-dialog", Ie);
 //#endregion
 //#region src/light-manager-card.ts
-var Re = class extends W {
+var ze = class extends W {
 	static {
 		this.properties = {
 			hass: { attribute: !1 },
@@ -1193,10 +1200,10 @@ var Re = class extends W {
     `];
 	}
 };
-customElements.get("light-manager-card") || customElements.define("light-manager-card", Re), window.customCards = window.customCards || [], window.customCards.push({
+customElements.get("light-manager-card") || customElements.define("light-manager-card", ze), window.customCards = window.customCards || [], window.customCards.push({
 	type: "light-manager-card",
 	name: "Light Manager room",
 	description: "A room colored by its lights, with the Light Manager scene dimmer"
 });
 //#endregion
-export { Re as LightManagerCard };
+export { ze as LightManagerCard };

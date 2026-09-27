@@ -66,7 +66,7 @@ export class LightManagerRoomDialog extends LitElement {
             : nothing}
           ${room.lights.length
             ? html`<h3>Lights</h3>
-                <div class="lights">${room.lights.map((id) => this._light(id))}</div>`
+                <div class="lights">${reachableFirst(this.hass, room.lights).map((id) => this._light(id))}</div>`
             : nothing}
         </div>
       </div>`;
@@ -217,23 +217,23 @@ export class LightManagerRoomDialog extends LitElement {
       }
       .scenes {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(84px, 1fr));
-        gap: 10px;
+        grid-template-columns: repeat(auto-fill, minmax(72px, 1fr));
+        gap: 8px;
       }
       .scene {
         background: #3a3a3a;
         border-radius: 12px;
-        padding: 12px 6px 10px;
+        padding: 10px 4px 8px;
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 8px;
-        min-height: 124px;
+        gap: 6px;
+        min-height: 100px;
         color: #fff;
       }
       .circle {
-        width: 58px;
-        height: 58px;
+        width: 46px;
+        height: 46px;
         border-radius: 50%;
         flex: none;
         display: flex;
@@ -252,7 +252,7 @@ export class LightManagerRoomDialog extends LitElement {
         color: #fff;
       }
       .label {
-        font-size: 0.95rem;
+        font-size: 0.85rem;
         line-height: 1.2;
         text-align: center;
         overflow-wrap: anywhere;
@@ -309,6 +309,15 @@ export class LightManagerRoomDialog extends LitElement {
       }
     `,
   ];
+}
+
+/** Lights that are reachable first, unreachable ones last (order kept). */
+export function reachableFirst(hass: HomeAssistant, ids: string[]): string[] {
+  const unreachable = (id: string) => {
+    const s = hass.states[id];
+    return !s || s.state === "unavailable";
+  };
+  return [...ids.filter((id) => !unreachable(id)), ...ids.filter(unreachable)];
 }
 
 /** "Woonkamer Tokyo" in room "Woonkamer" -> "Tokyo". */
