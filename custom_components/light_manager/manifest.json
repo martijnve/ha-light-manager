@@ -1,14 +1,24 @@
 {
   "domain": "light_manager",
   "name": "Light Manager",
-  "codeowners": ["@martijnve"],
+  "after_dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
+  "codeowners": [
+    "@martijnve"
+  ],
   "config_flow": true,
-  "dependencies": ["light", "scene"],
+  "dependencies": [
+    "light",
+    "scene"
+  ],
   "documentation": "https://github.com/martijnve/ha-light-manager",
   "integration_type": "service",
   "iot_class": "calculated",
   "issue_tracker": "https://github.com/martijnve/ha-light-manager/issues",
   "requirements": [],
   "single_config_entry": true,
-  "version": "0.2.4"
+  "version": "0.3.0"
 }

@@ -198,3 +198,24 @@ async def test_reapply_dimmed_scene_restores_it(
     state = hass.states.get(LIVING)
     assert state.attributes["brightness"] == 255
     assert state.attributes["modified"] is False
+
+
+def test_scene_colors() -> None:
+    """Scene colors come from the actions: xy color, color temperature, else warm white."""
+    from aiohue.v2.models.feature import (
+        ColorFeatureBase,
+        ColorPoint,
+        ColorTemperatureFeatureBase,
+    )
+
+    from custom_components.light_manager.hue import hue_scene_colors
+
+    scene = hue_scene()
+    scene.actions[0].action.color = ColorFeatureBase(xy=ColorPoint(x=0.675, y=0.322))
+    scene.actions[2].action.color_temperature = ColorTemperatureFeatureBase(mirek=500)
+    colors = hue_scene_colors(MockHueScene(scene, FakeScenesController()))
+    # lamp_b is off in the scene and left out.
+    assert len(colors) == 2
+    red, warm = colors
+    assert red[0] == 255 and red[1] < 100 and red[2] < 100
+    assert warm[0] == 255 and warm[2] < warm[1] < warm[0]

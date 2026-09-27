@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any
 
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback
 from homeassistant.helpers import entity_registry as er
+from homeassistant.util import color as color_util
 
 if TYPE_CHECKING:
     from .tracker import TrackedLight
@@ -124,3 +125,59 @@ class HueRecallWatcher:
             return
         self._last_recall[resource_id] = recalled_at
         self._on_recall(entity_id, recalled_at.isoformat())
+
+
+def hue_scene_colors(entity: Any) -> list[tuple[int, int, int]]:
+    """RGB colors of a Hue scene: its palette, else the lights' actions."""
+    resource = getattr(entity, "resource", None)
+    colors: list[tuple[int, int, int]] = []
+    try:
+        if (palette := getattr(resource, "palette", None)) and palette.color:
+            colors = [_xy_rgb(item.color.xy) for item in palette.color]
+        elif palette and palette.color_temperature:
+            colors = [
+                _mirek_rgb(item.color_temperature.mirek)
+                for item in palette.color_temperature
+            ]
+        else:
+            for action in _actions(entity) or []:
+                if _value(action.target.rtype) != _LIGHT:
+                    continue
+                feature = action.action
+                if feature.on is not None and not feature.on.on:
+                    continue
+                if feature.color is not None:
+                    colors.append(_xy_rgb(feature.color.xy))
+                elif feature.color_temperature is not None and (
+                    feature.color_temperature.mirek
+                ):
+                    colors.append(_mirek_rgb(feature.color_temperature.mirek))
+                else:
+                    colors.append(WARM_WHITE)
+    except AttributeError:
+        return []
+    return colors
+
+
+# Pale warm white, as the Hue app shows white and warm-white lamps; color
+# temperatures are mixed toward white the same way (the card does too).
+WARM_WHITE = (252, 214, 140)
+_WHITE_MIX = 0.3
+
+
+def _xy_rgb(xy: Any) -> tuple[int, int, int]:
+    return color_util.color_xy_to_RGB(xy.x, xy.y)
+
+
+def _mirek_rgb(mirek: int) -> tuple[int, int, int]:
+    return kelvin_rgb(1_000_000 / mirek)
+
+
+def kelvin_rgb(kelvin: float) -> tuple[int, int, int]:
+    """Color temperature as a pale RGB, like the Hue app shows it."""
+    r, g, b = color_util.color_temperature_to_rgb(kelvin)
+    return (
+        round(r + (255 - r) * _WHITE_MIX),
+        round(g + (255 - g) * _WHITE_MIX),
+        round(b + (255 - b) * _WHITE_MIX),
+    )

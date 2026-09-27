@@ -2,19 +2,29 @@
   "$schema": "https://raw.githubusercontent.com/jetify-com/devbox/0.17.2/.schema/devbox.schema.json",
   "packages": [
     "uv@latest",
-    "python@3.14"
+    "python@3.14",
+    "nodejs@22"
   ],
   "shell": {
     "init_hook": [
-      "uv sync --quiet"
+      "uv sync --quiet",
+      "(cd frontend && [ -d node_modules ] || npm ci --silent)"
     ],
     "scripts": {
       "test": [
-        "uv run pytest"
+        "uv run pytest",
+        "(cd frontend && npx vitest run)"
       ],
       "lint": [
         "uv run ruff check .",
-        "uv run ruff format --check ."
+        "uv run ruff format --check .",
+        "(cd frontend && npx tsc --noEmit)"
+      ],
+      "build": [
+        "(cd frontend && npm run build)"
+      ],
+      "preview": [
+        "(cd frontend && npm run dev)"
       ]
     }
   }

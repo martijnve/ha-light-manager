@@ -4,6 +4,9 @@ from typing import Final
 
 DOMAIN: Final = "light_manager"
 
+# The dashboard card, served by the integration.
+CARD_URL: Final = "/light_manager/light-manager-card.js"
+
 STORAGE_KEY: Final = DOMAIN
 STORAGE_VERSION: Final = 1
 SAVE_DELAY: Final = 5

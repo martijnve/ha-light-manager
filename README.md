@@ -11,6 +11,19 @@ A Home Assistant integration that remembers which scene was last applied to each
 - **Attributes:** `active_scene`, `scene_activated_at`, `modified`, `baseline` (per light, 0 = off).
 - The dimmer is not assigned to the area on purpose. Otherwise `light.turn_on` with an `area_id` target would set both the real lights and the dimmer.
 
+## Dashboard card
+
+Light Manager ships a card in the style of the Hue app: one card per room, colored by its lights, with an on/off switch and the scene dimmer as slider. Tapping it opens the room: its scenes (a circle in each scene's colors; tap to apply) and its lights (tile per light, colored by its current color, with a switch; tap for details).
+
+```yaml
+type: custom:light-manager-card
+area: woonkamer   # area id
+# name: Living room   (optional)
+# icon: mdi:sofa      (optional, default: the area's icon)
+```
+
+The integration serves and registers the card itself; no separate resource is needed. Hue scene pictures aren't available to Home Assistant, so scenes show their colors instead.
+
 ## Install
 
 In HACS add this repository as a custom repository (type *Integration*), install **Light Manager** and restart. Then go to *Settings → Devices & services → Add integration → Light Manager*.
@@ -23,4 +36,4 @@ In HACS add this repository as a custom repository (type *Integration*), install
 
 ## Development
 
-`devbox shell` (direnv loads it), then `devbox run test` and `devbox run lint`.
+`devbox shell` (direnv loads it), then `devbox run test` and `devbox run lint`. The card lives in `frontend/` (Lit + TypeScript): `devbox run build` writes `custom_components/light_manager/frontend/light-manager-card.js` (committed, HACS installs it from the repo); `devbox run preview` serves a preview with fake data on http://127.0.0.1:5173/.

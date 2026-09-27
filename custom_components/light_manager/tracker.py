@@ -6,13 +6,17 @@ import asyncio
 import logging
 import time
 from collections import Counter, deque
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from typing import Any
 
 from homeassistant.components.light import (
     ATTR_BRIGHTNESS,
+    ATTR_COLOR_TEMP_KELVIN,
+    ATTR_HS_COLOR,
+    ATTR_RGB_COLOR,
     ATTR_TRANSITION,
+    ATTR_XY_COLOR,
 )
 from homeassistant.components.light import (
     DOMAIN as LIGHT_DOMAIN,
@@ -46,17 +50,25 @@ from homeassistant.helpers.event import (
 )
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
+from homeassistant.util import color as color_util
 
 from .const import (
     BRIGHTNESS_TOLERANCE,
     COMMAND_GRACE_SECONDS,
+    DOMAIN,
     EVENT_SCENE_RELOADED,
     HA_SCENE_PLATFORM_DATA,
     SAVE_DELAY,
     STORAGE_KEY,
     STORAGE_VERSION,
 )
-from .hue import HueRecallWatcher, async_hue_scene_targets
+from .hue import (
+    WARM_WHITE,
+    HueRecallWatcher,
+    async_hue_scene_targets,
+    hue_scene_colors,
+    kelvin_rgb,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -166,6 +178,32 @@ def _ha_scene_targets(entity: Any) -> dict[str, TrackedLight] | None:
     return targets
 
 
+def _scene_colors(hass: HomeAssistant, entity: Any) -> list[tuple[int, int, int]]:
+    """RGB colors a scene gives its lights (for the card's scene buttons)."""
+    if isinstance(
+        states := getattr(getattr(entity, "scene_config", None), "states", None), dict
+    ):
+        colors = []
+        for eid, state in states.items():
+            if not eid.startswith(f"{LIGHT_DOMAIN}.") or state.state != STATE_ON:
+                continue
+            colors.append(_state_rgb(state.attributes))
+        return colors
+    return hue_scene_colors(entity)
+
+
+def _state_rgb(attributes: Mapping[str, Any]) -> tuple[int, int, int]:
+    if rgb := attributes.get(ATTR_RGB_COLOR):
+        return (int(rgb[0]), int(rgb[1]), int(rgb[2]))
+    if xy := attributes.get(ATTR_XY_COLOR):
+        return color_util.color_xy_to_RGB(float(xy[0]), float(xy[1]))
+    if hs := attributes.get(ATTR_HS_COLOR):
+        return color_util.color_hs_to_RGB(float(hs[0]), float(hs[1]))
+    if kelvin := attributes.get(ATTR_COLOR_TEMP_KELVIN):
+        return kelvin_rgb(float(kelvin))
+    return WARM_WHITE
+
+
 class SceneTracker:
     """Keeps the active scene per area and applies dim factors to its lights."""
 
@@ -258,6 +296,43 @@ class SceneTracker:
                 areas.add(area)
         area_reg = ar.async_get(self.hass)
         return {area_id for area_id in areas if area_reg.async_get_area(area_id)}
+
+    @callback
+    def async_room(self, area_id: str) -> dict[str, Any] | None:
+        """What the card needs about a room: dimmer, scenes and lights."""
+        if (area := ar.async_get(self.hass).async_get_area(area_id)) is None:
+            return None
+        ent_reg = er.async_get(self.hass)
+        scenes = []
+        for entity in self._scene_entities():
+            targets = async_scene_light_targets(self.hass, entity.entity_id)
+            if not targets or self._resolve_area(entity.entity_id, targets) != area_id:
+                continue
+            name = entity.name if isinstance(entity.name, str) else None
+            scenes.append(
+                {
+                    "entity_id": entity.entity_id,
+                    "name": name or entity.entity_id,
+                    "colors": _scene_colors(self.hass, entity)[:6],
+                }
+            )
+        lights = [
+            entry.entity_id
+            for entry in ent_reg.entities.values()
+            if entry.domain == LIGHT_DOMAIN
+            and entry.platform != DOMAIN
+            and not entry.disabled_by
+            and not entry.hidden_by
+            and self._entity_area(entry.entity_id) == area_id
+        ]
+        return {
+            "area_id": area_id,
+            "name": area.name,
+            "icon": area.icon,
+            "dimmer": ent_reg.async_get_entity_id(LIGHT_DOMAIN, DOMAIN, area_id),
+            "scenes": sorted(scenes, key=lambda scene: scene["name"].lower()),
+            "lights": sorted(lights),
+        }
 
     def is_on(self, area_id: str) -> bool:
         """Whether any light of the area's scene is on."""
