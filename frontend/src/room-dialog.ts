@@ -1,7 +1,8 @@
 import { css, html, LitElement, nothing } from "lit";
 import type { RGB } from "./color";
 import { dim, gradient, lightColor, mix, textColor } from "./color";
-import { icon, roomStyle, sharedStyles, slider, toggle } from "./header";
+import "./fade";
+import { icon, roomBackground, roomStyle, sharedStyles, slider, toggle } from "./header";
 import { dimRoom, fetchRoom, roomState, toggleRoom } from "./room";
 import type { HomeAssistant, Room, RoomScene } from "./types";
 
@@ -48,6 +49,7 @@ export class LightManagerRoomDialog extends LitElement {
     return html`<div class="backdrop" @click=${() => this.close()}></div>
       <div class="panel" role="dialog" aria-label=${room.name}>
         <header style=${roomStyle(state)}>
+          <lm-fade .background=${roomBackground(state)}></lm-fade>
           <div class="row">
             <button class="round" aria-label="Back" @click=${() => this.close()}>
               ${icon("mdi:arrow-left")}
@@ -97,10 +99,12 @@ export class LightManagerRoomDialog extends LitElement {
     const unavailable = !s || s.state === "unavailable";
     const color = lightColor(s);
     const level = (s?.attributes.brightness ?? 255) / 255;
-    const style = color
-      ? `background: linear-gradient(to bottom, rgb(${dim(color, level).join(",")}), rgb(${dim(color, level * 0.7).join(",")})); color: ${textColor([color], level)}`
-      : "";
+    const background = color
+      ? `linear-gradient(to bottom, rgb(${dim(color, level).join(",")}), rgb(${dim(color, level * 0.7).join(",")}))`
+      : "#3a3a3a";
+    const style = color ? `color: ${textColor([color], level)}` : "";
     return html`<div class="light ${color ? "on" : ""}" style=${style} @click=${() => this._moreInfo(entityId)}>
+      <lm-fade .background=${background}></lm-fade>
       <div class="top">
         ${s
           ? html`<ha-state-icon .hass=${this.hass} .stateObj=${s}></ha-state-icon>`
@@ -166,14 +170,19 @@ export class LightManagerRoomDialog extends LitElement {
         }
       }
       header {
-        background: var(--lm-bg);
         color: var(--lm-fg);
         border-radius: 0 0 20px 20px;
         padding: 14px 16px 12px;
         position: sticky;
         top: 0;
         z-index: 1;
-        transition: background 0.4s;
+        transition: color 0.8s;
+      }
+      header > .row,
+      header > lm-slider,
+      .light > .top,
+      .light > .bottom {
+        position: relative;
       }
       .row {
         display: flex;
@@ -275,6 +284,8 @@ export class LightManagerRoomDialog extends LitElement {
         overflow: hidden;
         cursor: pointer;
         scroll-snap-align: start;
+        position: relative;
+        transition: color 0.8s;
       }
       .top {
         flex: 1;

@@ -2,7 +2,8 @@ import { css, html, LitElement } from "lit";
 import "./controls";
 import "./room-dialog";
 import type { LightManagerRoomDialog } from "./room-dialog";
-import { icon, roomStyle, sharedStyles, slider, toggle } from "./header";
+import "./fade";
+import { icon, roomBackground, roomStyle, sharedStyles, slider, toggle } from "./header";
 import { dimRoom, fetchRoom, roomState, toggleRoom } from "./room";
 import type { CardConfig, HomeAssistant, Room } from "./types";
 
@@ -56,6 +57,7 @@ export class LightManagerCard extends LitElement {
     const room = this._room;
     const state = roomState(this.hass, room);
     return html`<ha-card style=${roomStyle(state)} @click=${this._open}>
+      <lm-fade .background=${roomBackground(state)}></lm-fade>
       <div class="row">
         <span class="icon">${icon(this._config.icon ?? room.icon ?? "mdi:sofa")}</span>
         <span class="name">${this._config.name ?? room.name}</span>
@@ -93,9 +95,11 @@ export class LightManagerCard extends LitElement {
     sharedStyles,
     css`
       ha-card {
-        background: var(--lm-bg);
+        background: none;
         color: var(--lm-fg);
         border-radius: 16px;
+        position: relative;
+        overflow: hidden;
         padding: 12px 14px 4px;
         box-sizing: border-box;
         height: 100%;
@@ -106,7 +110,11 @@ export class LightManagerCard extends LitElement {
         gap: 4px;
         cursor: pointer;
         border: none;
-        transition: background 0.4s;
+        transition: color 0.8s;
+      }
+      .row,
+      lm-slider {
+        position: relative;
       }
       .row {
         display: flex;

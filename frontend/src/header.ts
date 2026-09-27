@@ -1,6 +1,11 @@
 import { css, html, nothing } from "lit";
-import { gradient, textColor } from "./color";
+import { gradient, OFF_BACKGROUND, textColor } from "./color";
 import type { RoomState } from "./room";
+
+/** The room's background: a gradient of its lights, or grey when off. */
+export function roomBackground(state: RoomState): string {
+  return state.on ? gradient(state.colors, state.level) : OFF_BACKGROUND;
+}
 
 /** Background and text colors for a room in its current state. */
 export function roomStyle(state: RoomState): string {
