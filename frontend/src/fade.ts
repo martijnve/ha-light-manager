@@ -1,4 +1,5 @@
 import { css, html, LitElement } from "lit";
+import { define } from "./define";
 import { repeat } from "lit/directives/repeat.js";
 
 interface Layer {
@@ -74,4 +75,4 @@ export class LmFade extends LitElement {
   `;
 }
 
-customElements.get("lm-fade") || customElements.define("lm-fade", LmFade);
+define("lm-fade", LmFade);

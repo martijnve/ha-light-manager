@@ -1,4 +1,5 @@
 import { css, html, LitElement, nothing } from "lit";
+import { define } from "./define";
 import type { RGB } from "./color";
 import { dim, gradient, mix, textColor } from "./color";
 import "./fade";
@@ -342,8 +343,7 @@ export function shortName(name: string, roomName: string): string {
   return name.toLowerCase().startsWith(prefix.toLowerCase()) ? name.slice(prefix.length) : name;
 }
 
-customElements.get("light-manager-room-dialog") ||
-  customElements.define("light-manager-room-dialog", LightManagerRoomDialog);
+define("light-manager-room-dialog", LightManagerRoomDialog);
 
 declare global {
   interface HTMLElementTagNameMap {

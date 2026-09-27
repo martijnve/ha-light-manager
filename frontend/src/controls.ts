@@ -1,4 +1,5 @@
 import { css, html, LitElement } from "lit";
+import { define } from "./define";
 
 /** Hue-style pill switch. Fires `change` with detail { on }. */
 export class LmToggle extends LitElement {
@@ -220,5 +221,5 @@ export class LmSlider extends LitElement {
   }
 }
 
-customElements.get("lm-toggle") || customElements.define("lm-toggle", LmToggle);
-customElements.get("lm-slider") || customElements.define("lm-slider", LmSlider);
+define("lm-toggle", LmToggle);
+define("lm-slider", LmSlider);

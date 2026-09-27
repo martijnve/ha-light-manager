@@ -1,4 +1,5 @@
 import { css, html, LitElement } from "lit";
+import { define } from "./define";
 import "./controls";
 import "./room-dialog";
 import type { LightManagerRoomDialog } from "./room-dialog";
@@ -146,8 +147,7 @@ export class LightManagerCard extends LitElement {
   ];
 }
 
-customElements.get("light-manager-card") ||
-  customElements.define("light-manager-card", LightManagerCard);
+define("light-manager-card", LightManagerCard);
 
 (window as any).customCards = (window as any).customCards || [];
 (window as any).customCards.push({
