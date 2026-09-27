@@ -71,6 +71,8 @@ export class LmToggle extends LitElement {
   }
 }
 
+const THUMB = 26;
+
 /**
  * Hue-style brightness slider (value 0..1). Fires `change` with detail { value }
  * while dragging (at most every 400 ms) and on release.
@@ -141,7 +143,9 @@ export class LmSlider extends LitElement {
 
   render() {
     const v = this._dragValue ?? this.value;
-    const pct = `${Math.round(v * 1000) / 10}%`;
+    // The thumb's centre travels between the track ends minus its radius, so
+    // at 0 and 100 % it stays on the track.
+    const pos = `calc(${THUMB / 2}px + (100% - ${THUMB}px) * ${v})`;
     return html`<div
       class="hit"
       role="slider"
@@ -158,14 +162,14 @@ export class LmSlider extends LitElement {
       @click=${(ev: Event) => ev.stopPropagation()}
     >
       <div class="track"></div>
-      <div class="fill" style="width:${pct}"></div>
-      <div class="thumb" style="left:${pct}"></div>
+      <div class="fill" style="width:${pos}"></div>
+      <div class="thumb" style="left:${pos}"></div>
     </div>`;
   }
 
   private _valueAt(ev: PointerEvent): number {
     const rect = (ev.currentTarget as HTMLElement).getBoundingClientRect();
-    const v = (ev.clientX - rect.left) / rect.width;
+    const v = (ev.clientX - rect.left - THUMB / 2) / (rect.width - THUMB);
     return Math.max(0.01, Math.min(1, v));
   }
 
