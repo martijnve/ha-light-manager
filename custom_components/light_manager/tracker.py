@@ -39,7 +39,11 @@ from homeassistant.core import (
 from homeassistant.helpers import area_registry as ar
 from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers import entity_registry as er
-from homeassistant.helpers.event import TrackStates, async_track_state_change_filtered
+from homeassistant.helpers.event import (
+    TrackStates,
+    async_call_later,
+    async_track_state_change_filtered,
+)
 from homeassistant.helpers.start import async_at_started
 from homeassistant.helpers.storage import Store
 
@@ -59,6 +63,9 @@ _LOGGER = logging.getLogger(__name__)
 SCENE_DOMAIN = "scene"
 HA_SCENE_PLATFORM = "homeassistant"
 _INVALID_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+# After re-applying a dimmed scene, wait this long for the Hue bridge to finish
+# its recall before restoring the scene brightness (the bridge reported ~1.2 s).
+RESTORE_DELAY_SECONDS = 2.0
 # A Hue scene activated through HA is reported twice: first by the HA scene
 # state change, then by the bridge's recall event. Skip the second.
 _DUPLICATE_ACTIVATION_SECONDS = 5.0
@@ -177,6 +184,8 @@ class SceneTracker:
         self._hue = HueRecallWatcher(self._on_hue_recall)
         # scene entity id -> monotonic time of its last activation through HA
         self._last_ha_activation: dict[str, float] = {}
+        # area id -> cancel callback of a scheduled scene restore
+        self._pending_restores: dict[str, CALLBACK_TYPE] = {}
 
     # --- lifecycle ---------------------------------------------------------
 
@@ -221,6 +230,8 @@ class SceneTracker:
         """Stop listening."""
         while self._unsubs:
             self._unsubs.pop()()
+        while self._pending_restores:
+            self._pending_restores.popitem()[1]()
         self._hue.async_stop()
 
     async def async_save_now(self) -> None:
@@ -418,16 +429,29 @@ class SceneTracker:
         elif previous.scene_entity_id == entity_id and (
             previous.factor < 1 or previous.modified
         ):
-            # The Hue bridge ignores a recall of the scene it considers active,
-            # so re-applying a dimmed or changed scene would leave the lights
-            # as they are. Restore the scene's brightness ourselves.
-            self.hass.async_create_task(
-                self.async_restore_scene(area_id), eager_start=False
-            )
+            # Re-applying a dimmed or changed Hue scene leaves the lights as
+            # they are: the bridge re-applies the scene at the current dim
+            # level. Once the bridge is done, restore the scene brightness.
+            self._schedule_restore(area_id)
+
+    @callback
+    def _schedule_restore(self, area_id: str) -> None:
+        if cancel := self._pending_restores.pop(area_id, None):
+            cancel()
+
+        @callback
+        def _restore(_now: Any) -> None:
+            self._pending_restores.pop(area_id, None)
+            self.hass.async_create_task(self.async_restore_scene(area_id))
+
+        self._pending_restores[area_id] = async_call_later(
+            self.hass, RESTORE_DELAY_SECONDS, _restore
+        )
 
     async def async_restore_scene(self, area_id: str) -> None:
-        """Set the lights to the scene's own brightness and on/off state."""
-        if (area := self._areas.get(area_id)) is None:
+        """Set lights that are off their scene values back to them."""
+        # Dimmed again meanwhile: leave it.
+        if (area := self._areas.get(area_id)) is None or area.factor < 1:
             return
         calls = []
         for eid, tl in area.lights.items():
@@ -435,6 +459,13 @@ class SceneTracker:
             if state is None or state.state in _INVALID_STATES:
                 continue
             if tl.on:
+                brightness = state.attributes.get(ATTR_BRIGHTNESS)
+                if (
+                    state.state == STATE_ON
+                    and brightness is not None
+                    and abs(brightness - tl.baseline) <= BRIGHTNESS_TOLERANCE
+                ):
+                    continue
                 calls.append(
                     (
                         SERVICE_TURN_ON,
@@ -443,6 +474,12 @@ class SceneTracker:
                 )
             elif state.state == STATE_ON:
                 calls.append((SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid}))
+        if calls:
+            _LOGGER.info(
+                "Scene %s applied again: restoring %d light(s) to the scene",
+                area.scene_entity_id,
+                len(calls),
+            )
         await self._async_call(calls, None)
         self._notify(area_id)
 

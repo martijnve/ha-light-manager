@@ -22,9 +22,11 @@ from aiohue.v2.models.scene import (
 from homeassistant.components.scene import Scene
 from homeassistant.core import Context, HomeAssistant
 from homeassistant.setup import async_setup_component
+from homeassistant.util import dt as dt_util
 from pytest_homeassistant_custom_component.common import (
     MockConfigEntry,
     MockEntityPlatform,
+    async_fire_time_changed,
 )
 
 from custom_components.light_manager.const import DOMAIN
@@ -187,6 +189,10 @@ async def test_reapply_dimmed_scene_restores_it(
     assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
 
     await activate()
+    # Not straight away: the bridge is still busy with its recall.
+    assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3))
+    await hass.async_block_till_done()
     assert hass.states.get("light.lamp_a").attributes["brightness"] == 204
     assert hass.states.get("light.lamp_b").state == "off"
     state = hass.states.get(LIVING)
