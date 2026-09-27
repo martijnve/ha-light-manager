@@ -6,6 +6,7 @@ requires-python = ">=3.14"
 
 [dependency-groups]
 dev = [
+    "aiohue==4.9.0",
     "pytest-homeassistant-custom-component",
     "ruff",
 ]

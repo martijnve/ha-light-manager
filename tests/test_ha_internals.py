@@ -30,3 +30,17 @@ async def test_reads_scene_config(hass: HomeAssistant, scenes: None) -> None:
         "light.lamp_c": (255, False),
     }
     assert async_scene_light_targets(hass, "scene.missing") is None
+
+
+def test_aiohue_fields() -> None:
+    """The aiohue scene model still has the fields hue.py reads."""
+    from dataclasses import fields
+
+    from aiohue.v2.controllers.events import EventType
+    from aiohue.v2.models.scene import Action, ActionAction, Scene, SceneStatus
+
+    assert {"id", "actions", "status"} <= {f.name for f in fields(Scene)}
+    assert {"target", "action"} <= {f.name for f in fields(Action)}
+    assert {"on", "dimming"} <= {f.name for f in fields(ActionAction)}
+    assert "last_recall" in {f.name for f in fields(SceneStatus)}
+    assert EventType.RESOURCE_UPDATED.value == "update"

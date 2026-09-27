@@ -4,7 +4,7 @@ A Home Assistant integration that remembers which scene was last applied to each
 
 ## How it works
 
-- **Scenes:** only Home Assistant scenes (created in the scene editor or `scenes.yaml`). Scenes from other integrations (Hue, …) and `scene.create` snapshots are ignored.
+- **Scenes:** Home Assistant scenes (scene editor or `scenes.yaml`) and Hue scenes. For a Hue scene the per-light targets come from the scene on the bridge, and a scene recalled from the Hue app or a Hue switch is picked up too. Other integrations' scenes, Hue smart scenes and `scene.create` snapshots are ignored.
 - **Area:** the scene entity's area, or else the area most of the scene's lights are in.
 - **Dimmer:** `light.<area>_scene`, e.g. `light.living_room_scene`. Brightness = the dim factor. Activating a scene resets it to 100 %. `brightness_step_pct` works, so dimmer-switch blueprints can drive it. Off turns the scene's lights off; on brings them back at the current factor. Colour and colour temperature are left alone.
 - **Manual changes:** a scene light changed outside the dimmer gets that brightness (÷ the current factor) as its new scene value. A light turned off stays out until the scene is applied again. The dimmer's `modified` attribute shows this.
@@ -17,7 +17,8 @@ In HACS add this repository as a custom repository (type *Integration*), install
 
 ## Limitations
 
-- Reads the scene's stored target states from Home Assistant internals (there is no public API for them). `tests/test_ha_internals.py` catches changes to those internals.
+- Reads scene targets from internals: Home Assistant's scene platform config and the Hue integration's aiohue scene resource (there is no public API for either). `tests/test_ha_internals.py` catches changes to those internals.
+- A Hue scene action without a brightness starts at 255; the light's first report corrects it (and marks the scene `modified`).
 - State reports from a light during a scene's own slow transition (> 5 s) can be taken as manual changes.
 
 ## Development

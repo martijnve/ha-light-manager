@@ -1,4 +1,4 @@
-"""Track the last Home Assistant scene applied per area and dim it relatively."""
+"""Track the last scene applied per area and dim it relatively."""
 
 from __future__ import annotations
 
@@ -17,6 +17,7 @@ from homeassistant.components.light import (
 from homeassistant.components.light import (
     DOMAIN as LIGHT_DOMAIN,
 )
+from homeassistant.components.scene import DATA_COMPONENT as SCENE_COMPONENT
 from homeassistant.const import (
     ATTR_ENTITY_ID,
     SERVICE_TURN_OFF,
@@ -51,11 +52,16 @@ from .const import (
     STORAGE_KEY,
     STORAGE_VERSION,
 )
+from .hue import HueRecallWatcher, async_hue_scene_targets
 
 _LOGGER = logging.getLogger(__name__)
 
 SCENE_DOMAIN = "scene"
+HA_SCENE_PLATFORM = "homeassistant"
 _INVALID_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
+# A Hue scene activated through HA is reported twice: first by the HA scene
+# state change, then by the bridge's recall event. Skip the second.
+_DUPLICATE_ACTIVATION_SECONDS = 5.0
 
 
 @dataclass
@@ -112,24 +118,33 @@ class AreaScene:
 def async_scene_light_targets(
     hass: HomeAssistant, scene_entity_id: str
 ) -> dict[str, TrackedLight] | None:
-    """Return the lights a Home Assistant scene sets, with their target brightness.
+    """Return the lights a scene sets, with their target brightness.
 
-    Returns None for scenes that aren't HA-native (e.g. Hue) or were created
-    with scene.create. Reads the scene platform's internal config: HA has no
-    public API for a scene's target states.
+    Supports Home Assistant scenes and Hue scenes. Returns None for other
+    scenes and for scene.create snapshots.
     """
     platform = hass.data.get(HA_SCENE_PLATFORM_DATA)
-    if platform is None:
+    if platform is not None and (entity := platform.entities.get(scene_entity_id)):
+        return _ha_scene_targets(entity)
+    component = hass.data.get(SCENE_COMPONENT)
+    if component is None or (entity := component.get_entity(scene_entity_id)) is None:
         return None
-    entity = platform.entities.get(scene_entity_id)
-    if entity is None or getattr(entity, "from_service", False):
+    return async_hue_scene_targets(hass, entity, TrackedLight)
+
+
+def _ha_scene_targets(entity: Any) -> dict[str, TrackedLight] | None:
+    """Targets of a Home Assistant scene, from the platform's internal config.
+
+    HA has no public API for a scene's target states.
+    """
+    if getattr(entity, "from_service", False):
         return None
     try:
         states: dict[str, State] = entity.scene_config.states
     except AttributeError:
         _LOGGER.warning(
             "Cannot read the config of %s: Home Assistant's scene internals changed",
-            scene_entity_id,
+            entity.entity_id,
         )
         return None
 
@@ -159,6 +174,9 @@ class SceneTracker:
         self._area_listeners: dict[str, list[Callable[[], None]]] = {}
         self._areas_changed_listeners: list[Callable[[], None]] = []
         self._unsubs: list[CALLBACK_TYPE] = []
+        self._hue = HueRecallWatcher(self._on_hue_recall)
+        # scene entity id -> monotonic time of its last activation through HA
+        self._last_ha_activation: dict[str, float] = {}
 
     # --- lifecycle ---------------------------------------------------------
 
@@ -186,8 +204,7 @@ class SceneTracker:
                 EVENT_SCENE_RELOADED, self._async_on_scene_reload
             )
         )
-        # Stored scenes may have been deleted while we weren't running.
-        self._unsubs.append(async_at_started(self.hass, self._drop_missing_scenes))
+        self._unsubs.append(async_at_started(self.hass, self._async_on_started))
         self._unsubs.append(
             self.hass.bus.async_listen(
                 er.EVENT_ENTITY_REGISTRY_UPDATED, self._async_on_registry_update
@@ -204,6 +221,7 @@ class SceneTracker:
         """Stop listening."""
         while self._unsubs:
             self._unsubs.pop()()
+        self._hue.async_stop()
 
     async def async_save_now(self) -> None:
         """Write pending state to storage (on unload)."""
@@ -219,12 +237,10 @@ class SceneTracker:
     def async_scene_areas(self) -> set[str]:
         """Areas that have a HA scene or a tracked scene: each gets a dimmer."""
         areas = set(self._areas)
-        platform = self.hass.data.get(HA_SCENE_PLATFORM_DATA)
-        if platform is not None:
-            for scene_entity_id in list(platform.entities):
-                targets = async_scene_light_targets(self.hass, scene_entity_id)
-                if targets and (area := self._resolve_area(scene_entity_id, targets)):
-                    areas.add(area)
+        for entity in self._scene_entities():
+            targets = async_scene_light_targets(self.hass, entity.entity_id)
+            if targets and (area := self._resolve_area(entity.entity_id, targets)):
+                areas.add(area)
         area_reg = ar.async_get(self.hass)
         return {area_id for area_id in areas if area_reg.async_get_area(area_id)}
 
@@ -354,12 +370,30 @@ class SceneTracker:
     def _handle_scene_change(
         self, entity_id: str, old: State | None, new: State | None
     ) -> None:
+        if old is None and new is not None:
+            # A scene entity was added: it may be on a Hue bridge not yet watched.
+            self._hue.async_refresh(self._scene_entities())
         # A scene's state is its last activation time. Entity (re)adds on
         # startup or reload have old=None, removals have new=None: not activations.
         if old is None or new is None or old.state == STATE_UNAVAILABLE:
             return
         if new.state in _INVALID_STATES or new.state == old.state:
             return
+        # The scene's light changes carry the activation context.
+        self._own_contexts.append(new.context.id)
+        self._last_ha_activation[entity_id] = time.monotonic()
+        self._activate(entity_id, new.state)
+
+    @callback
+    def _on_hue_recall(self, entity_id: str, recalled_at: str) -> None:
+        """A Hue scene was recalled, possibly from the Hue app or a switch."""
+        last = self._last_ha_activation.get(entity_id)
+        if last is not None and time.monotonic() - last < _DUPLICATE_ACTIVATION_SECONDS:
+            return
+        self._activate(entity_id, recalled_at)
+
+    @callback
+    def _activate(self, entity_id: str, activated_at: str) -> None:
         targets = async_scene_light_targets(self.hass, entity_id)
         if not targets:
             return
@@ -370,10 +404,8 @@ class SceneTracker:
 
         is_new_area = area_id not in self._areas
         self._areas[area_id] = AreaScene(
-            scene_entity_id=entity_id, activated_at=new.state, lights=targets
+            scene_entity_id=entity_id, activated_at=activated_at, lights=targets
         )
-        # The scene's light changes carry the activation context.
-        self._own_contexts.append(new.context.id)
         self._rebuild_light_index()
         self._schedule_save()
         self._notify(area_id)
@@ -430,19 +462,32 @@ class SceneTracker:
         self._notify_areas_changed()
 
     @callback
-    def _drop_missing_scenes(self, *_: Any) -> None:
-        """Stop tracking areas whose scene is no longer loaded."""
-        platform = self.hass.data.get(HA_SCENE_PLATFORM_DATA)
-        existing = set(platform.entities) if platform is not None else set()
-        # The reload re-adds scene entities with eager tasks, so they are in
-        # the platform again by now (tests/test_dimming.py pins this).
-        self._drop_areas_of(
-            {
-                area.scene_entity_id
-                for area in self._areas.values()
-                if area.scene_entity_id not in existing
-            }
-        )
+    def _async_on_started(self, *_: Any) -> None:
+        self._hue.async_refresh(self._scene_entities())
+        # Stored scenes may have been deleted while we weren't running.
+        self._drop_missing_scenes()
+        self._notify_areas_changed()
+
+    @callback
+    def _drop_missing_scenes(self) -> None:
+        """Stop tracking areas whose scene is gone.
+
+        A scene reload re-adds HA scene entities with eager tasks, so they are
+        loaded again when scene_reloaded fires (tests/test_dimming.py pins
+        this). A Hue scene that isn't loaded may just have its bridge offline:
+        it counts as gone only when its registry entry is gone too.
+        """
+        component = self.hass.data.get(SCENE_COMPONENT)
+        ent_reg = er.async_get(self.hass)
+        missing = set()
+        for area in self._areas.values():
+            entity_id = area.scene_entity_id
+            if component is not None and component.get_entity(entity_id):
+                continue
+            entry = ent_reg.async_get(entity_id)
+            if entry is None or entry.platform == HA_SCENE_PLATFORM:
+                missing.add(entity_id)
+        self._drop_areas_of(missing)
 
     @callback
     def _async_on_registry_update(self, event: Event) -> None:
@@ -483,6 +528,10 @@ class SceneTracker:
                 self._notify(area_id)
 
     # --- helpers -----------------------------------------------------------
+
+    def _scene_entities(self) -> list[Any]:
+        component = self.hass.data.get(SCENE_COMPONENT)
+        return list(component.entities) if component is not None else []
 
     @callback
     def _resolve_area(
