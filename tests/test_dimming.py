@@ -263,3 +263,24 @@ async def test_stored_scene_missing_at_start(
     assert await hass.config_entries.async_setup(entry.entry_id)
     await hass.async_block_till_done()
     assert hass.states.get(LIVING).state == "unavailable"
+
+
+async def test_untracked_scene_counts_as_manual(
+    hass: HomeAssistant, entry: MockConfigEntry
+) -> None:
+    """Lights changed by an untracked scene (a scene.create snapshot) update the baseline."""
+    await activate(hass, "scene.evening")
+    await hass.services.async_call(
+        "scene",
+        "create",
+        {
+            "scene_id": "flash",
+            "entities": {"light.lamp_a": {"state": "on", "brightness": 50}},
+        },
+        blocking=True,
+    )
+    await activate(hass, "scene.flash")
+    state = hass.states.get(LIVING)
+    assert state.attributes["active_scene"] == "scene.evening"
+    assert state.attributes["modified"] is True
+    assert state.attributes["baseline"]["light.lamp_a"] == 50

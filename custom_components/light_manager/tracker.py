@@ -379,10 +379,8 @@ class SceneTracker:
             return
         if new.state in _INVALID_STATES or new.state == old.state:
             return
-        # The scene's light changes carry the activation context.
-        self._own_contexts.append(new.context.id)
         self._last_ha_activation[entity_id] = time.monotonic()
-        self._activate(entity_id, new.state)
+        self._activate(entity_id, new.state, new.context.id)
 
     @callback
     def _on_hue_recall(self, entity_id: str, recalled_at: str) -> None:
@@ -393,7 +391,9 @@ class SceneTracker:
         self._activate(entity_id, recalled_at)
 
     @callback
-    def _activate(self, entity_id: str, activated_at: str) -> None:
+    def _activate(
+        self, entity_id: str, activated_at: str, context_id: str | None = None
+    ) -> None:
         targets = async_scene_light_targets(self.hass, entity_id)
         if not targets:
             return
@@ -402,6 +402,10 @@ class SceneTracker:
             _LOGGER.debug("Scene %s has no area; not tracked", entity_id)
             return
 
+        # The scene's light changes carry the activation context. Only for
+        # tracked scenes: lights changed by other scenes are manual changes.
+        if context_id is not None:
+            self._own_contexts.append(context_id)
         is_new_area = area_id not in self._areas
         self._areas[area_id] = AreaScene(
             scene_entity_id=entity_id, activated_at=activated_at, lights=targets
