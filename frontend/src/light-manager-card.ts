@@ -34,7 +34,8 @@ export class LightManagerCard extends LitElement {
   }
 
   getGridOptions() {
-    return { columns: 12, rows: 2, min_columns: 6, min_rows: 2 };
+    // Height from the content (~84 px, like hue-like-light-card), not grid rows.
+    return { columns: 12, rows: "auto", min_columns: 6 };
   }
 
   protected updated() {
@@ -95,13 +96,14 @@ export class LightManagerCard extends LitElement {
         background: var(--lm-bg);
         color: var(--lm-fg);
         border-radius: 16px;
-        padding: 18px 16px 14px;
+        padding: 12px 14px 4px;
         box-sizing: border-box;
         height: 100%;
-        min-height: 112px;
+        min-height: 80px;
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        gap: 4px;
         cursor: pointer;
         border: none;
         transition: background 0.4s;
@@ -113,8 +115,8 @@ export class LightManagerCard extends LitElement {
       }
       .name {
         flex: 1;
-        font-size: 1.15rem;
-        font-weight: 600;
+        font-size: 18px;
+        font-weight: 500;
         overflow: hidden;
         text-overflow: ellipsis;
         white-space: nowrap;
@@ -129,7 +131,7 @@ export class LightManagerCard extends LitElement {
         color: var(--error-color, #db4437);
       }
       .loading {
-        height: 112px;
+        height: 84px;
         background: #3a3a3a;
       }
     `,
