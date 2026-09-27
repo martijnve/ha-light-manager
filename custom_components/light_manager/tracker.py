@@ -391,6 +391,7 @@ class SceneTracker:
         if new.state in _INVALID_STATES or new.state == old.state:
             return
         self._last_ha_activation[entity_id] = time.monotonic()
+        _LOGGER.debug("Scene %s activated through HA at %s", entity_id, new.state)
         self._activate(entity_id, new.state, new.context.id)
 
     @callback
@@ -398,7 +399,9 @@ class SceneTracker:
         """A Hue scene was recalled, possibly from the Hue app or a switch."""
         last = self._last_ha_activation.get(entity_id)
         if last is not None and time.monotonic() - last < _DUPLICATE_ACTIVATION_SECONDS:
+            _LOGGER.debug("Hue recall of %s at %s: duplicate", entity_id, recalled_at)
             return
+        _LOGGER.debug("Hue recall of %s at %s", entity_id, recalled_at)
         self._activate(entity_id, recalled_at)
 
     @callback
@@ -418,6 +421,14 @@ class SceneTracker:
         if context_id is not None:
             self._own_contexts.append(context_id)
         previous = self._areas.get(area_id)
+        _LOGGER.debug(
+            "Tracking %s for area %s; previous: %s",
+            entity_id,
+            area_id,
+            previous
+            and f"{previous.scene_entity_id} factor={previous.factor:.3f} "
+            f"modified={previous.modified}",
+        )
         self._areas[area_id] = AreaScene(
             scene_entity_id=entity_id, activated_at=activated_at, lights=targets
         )
@@ -436,6 +447,7 @@ class SceneTracker:
 
     @callback
     def _schedule_restore(self, area_id: str) -> None:
+        _LOGGER.debug("Scheduling a scene restore for area %s", area_id)
         if cancel := self._pending_restores.pop(area_id, None):
             cancel()
 
@@ -452,6 +464,7 @@ class SceneTracker:
         """Set lights that are off their scene values back to them."""
         # Dimmed again meanwhile: leave it.
         if (area := self._areas.get(area_id)) is None or area.factor < 1:
+            _LOGGER.debug("Scene restore for area %s skipped", area_id)
             return
         calls = []
         for eid, tl in area.lights.items():
@@ -474,6 +487,15 @@ class SceneTracker:
                 )
             elif state.state == STATE_ON:
                 calls.append((SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid}))
+        _LOGGER.debug(
+            "Scene restore for area %s: %s",
+            area_id,
+            {
+                eid: (s.state, s.attributes.get(ATTR_BRIGHTNESS), tl.baseline)
+                for eid, tl in area.lights.items()
+                if (s := self.hass.states.get(eid)) is not None
+            },
+        )
         if calls:
             _LOGGER.info(
                 "Scene %s applied again: restoring %d light(s) to the scene",
