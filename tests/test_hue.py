@@ -161,3 +161,34 @@ async def test_recalled_outside_ha(
     controller.emit(hue_scene(T0 + timedelta(minutes=1)))
     await hass.async_block_till_done()
     assert hass.states.get(LIVING).attributes["brightness"] == 128
+
+
+async def test_reapply_dimmed_scene_restores_it(
+    hass: HomeAssistant, controller: FakeScenesController
+) -> None:
+    """Re-applying the active scene after dimming restores its brightness.
+
+    The Hue bridge ignores a recall of the scene it considers active (the fake
+    scene's activation does nothing, like the bridge), so we set the lights.
+    """
+
+    async def activate() -> None:
+        await hass.services.async_call(
+            "scene",
+            "turn_on",
+            {"entity_id": HUE_SCENE},
+            blocking=True,
+            context=Context(),
+        )
+        await hass.async_block_till_done()
+
+    await activate()
+    await dim(hass, 50)
+    assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
+
+    await activate()
+    assert hass.states.get("light.lamp_a").attributes["brightness"] == 204
+    assert hass.states.get("light.lamp_b").state == "off"
+    state = hass.states.get(LIVING)
+    assert state.attributes["brightness"] == 255
+    assert state.attributes["modified"] is False

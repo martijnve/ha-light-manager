@@ -406,15 +406,45 @@ class SceneTracker:
         # tracked scenes: lights changed by other scenes are manual changes.
         if context_id is not None:
             self._own_contexts.append(context_id)
-        is_new_area = area_id not in self._areas
+        previous = self._areas.get(area_id)
         self._areas[area_id] = AreaScene(
             scene_entity_id=entity_id, activated_at=activated_at, lights=targets
         )
         self._rebuild_light_index()
         self._schedule_save()
         self._notify(area_id)
-        if is_new_area:
+        if previous is None:
             self._notify_areas_changed()
+        elif previous.scene_entity_id == entity_id and (
+            previous.factor < 1 or previous.modified
+        ):
+            # The Hue bridge ignores a recall of the scene it considers active,
+            # so re-applying a dimmed or changed scene would leave the lights
+            # as they are. Restore the scene's brightness ourselves.
+            self.hass.async_create_task(
+                self.async_restore_scene(area_id), eager_start=False
+            )
+
+    async def async_restore_scene(self, area_id: str) -> None:
+        """Set the lights to the scene's own brightness and on/off state."""
+        if (area := self._areas.get(area_id)) is None:
+            return
+        calls = []
+        for eid, tl in area.lights.items():
+            state = self.hass.states.get(eid)
+            if state is None or state.state in _INVALID_STATES:
+                continue
+            if tl.on:
+                calls.append(
+                    (
+                        SERVICE_TURN_ON,
+                        {ATTR_ENTITY_ID: eid, ATTR_BRIGHTNESS: tl.baseline},
+                    )
+                )
+            elif state.state == STATE_ON:
+                calls.append((SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid}))
+        await self._async_call(calls, None)
+        self._notify(area_id)
 
     @callback
     def _handle_light_change(self, entity_id: str, new: State | None) -> None:
