@@ -116,10 +116,10 @@ async def controller(
     return controller
 
 
-async def dim(hass: HomeAssistant, pct: int) -> None:
-    """Dim the living room scene."""
+async def dim(hass: HomeAssistant, brightness: int) -> None:
+    """Dim the living room scene (its level is 204 at 100 %)."""
     await hass.services.async_call(
-        "light", "turn_on", {"entity_id": LIVING, "brightness_pct": pct}, blocking=True
+        "light", "turn_on", {"entity_id": LIVING, "brightness": brightness}, blocking=True
     )
     await hass.async_block_till_done()
 
@@ -137,13 +137,13 @@ async def test_activated_through_ha(
     assert state.attributes["active_scene"] == HUE_SCENE
     assert state.attributes["baseline"] == {"light.lamp_a": 204, "light.lamp_b": 0}
 
-    await dim(hass, 50)
+    await dim(hass, 102)
     assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
 
     # The bridge then reports the same recall: not a second activation.
     controller.emit(hue_scene(T0 + timedelta(seconds=1)))
     await hass.async_block_till_done()
-    assert hass.states.get(LIVING).attributes["brightness"] == 128
+    assert hass.states.get(LIVING).attributes["brightness"] == 102
 
 
 async def test_recalled_outside_ha(
@@ -159,10 +159,10 @@ async def test_recalled_outside_ha(
     assert state.attributes["scene_activated_at"] == "2026-09-27T18:01:00+00:00"
 
     # Other updates of the scene (same last_recall) don't re-activate it.
-    await dim(hass, 50)
+    await dim(hass, 102)
     controller.emit(hue_scene(T0 + timedelta(minutes=1)))
     await hass.async_block_till_done()
-    assert hass.states.get(LIVING).attributes["brightness"] == 128
+    assert hass.states.get(LIVING).attributes["brightness"] == 102
 
 
 async def test_reapply_dimmed_scene_restores_it(
@@ -185,7 +185,7 @@ async def test_reapply_dimmed_scene_restores_it(
         await hass.async_block_till_done()
 
     await activate()
-    await dim(hass, 50)
+    await dim(hass, 102)
     assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
 
     await activate()
@@ -196,7 +196,7 @@ async def test_reapply_dimmed_scene_restores_it(
     assert hass.states.get("light.lamp_a").attributes["brightness"] == 204
     assert hass.states.get("light.lamp_b").state == "off"
     state = hass.states.get(LIVING)
-    assert state.attributes["brightness"] == 255
+    assert state.attributes["brightness"] == 204
     assert state.attributes["modified"] is False
 
 

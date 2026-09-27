@@ -61,7 +61,7 @@ export class LightManagerRoomDialog extends LitElement {
         </header>
         <div class="body">
           ${room.scenes.length
-            ? html`<h3>My scenes</h3>
+            ? html`<h3>Scenes</h3>
                 <div class="tiles">
                   ${room.scenes.map((scene) => this._scene(scene, scene.entity_id === state.activeScene))}
                 </div>`

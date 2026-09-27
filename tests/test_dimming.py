@@ -55,12 +55,12 @@ async def test_dimmers_created_unavailable(
 async def test_activation_builds_baseline(
     hass: HomeAssistant, entry: MockConfigEntry
 ) -> None:
-    """Activating a scene tracks it for the scene's area at 100 %."""
+    """Activating a scene tracks it at the level of its brightest light."""
     await activate(hass, "scene.evening")
 
     state = hass.states.get(LIVING)
     assert state.state == "on"
-    assert state.attributes["brightness"] == 255
+    assert state.attributes["brightness"] == 200
     assert state.attributes["active_scene"] == "scene.evening"
     assert state.attributes["modified"] is False
     assert state.attributes["baseline"] == {
@@ -74,14 +74,14 @@ async def test_activation_builds_baseline(
 
 
 async def test_dim_relative(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    """Dimming to 50 % halves every light; off lights stay off; minimum 1."""
+    """Dimming to half the scene level halves every light; off lights stay off; minimum 1."""
     await activate(hass, "scene.evening")
 
-    await set_dimmer(hass, LIVING, brightness_pct=50)
+    await set_dimmer(hass, LIVING, brightness=100)
     assert brightness(hass, "light.lamp_a") == 100
     assert brightness(hass, "light.lamp_b") == 50
     assert brightness(hass, "light.lamp_c") is None
-    assert hass.states.get(LIVING).attributes["brightness"] == 128
+    assert hass.states.get(LIVING).attributes["brightness"] == 100
 
     await set_dimmer(hass, LIVING, brightness=1)
     assert brightness(hass, "light.lamp_a") == 1
@@ -91,17 +91,29 @@ async def test_dim_relative(hass: HomeAssistant, entry: MockConfigEntry) -> None
     assert hass.states.get(LIVING).attributes["modified"] is False
 
 
-async def test_brightness_step(hass: HomeAssistant, entry: MockConfigEntry) -> None:
-    """Dimmer-switch style brightness_step_pct works on the virtual light."""
+async def test_brighten_above_scene(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """A scene can be brightened until its brightest light is at 255, keeping ratios."""
     await activate(hass, "scene.evening")
-    await set_dimmer(hass, LIVING, brightness_step_pct=-50)
+
+    await set_dimmer(hass, LIVING, brightness=255)
+    assert brightness(hass, "light.lamp_a") == 255
+    assert brightness(hass, "light.lamp_b") == 127
+    assert brightness(hass, "light.lamp_c") is None
+    assert hass.states.get(LIVING).attributes["brightness"] == 255
+    assert hass.states.get(LIVING).attributes["modified"] is False
+
+
+async def test_brightness_step(hass: HomeAssistant, entry: MockConfigEntry) -> None:
+    """Dimmer-switch style brightness_step works on the virtual light."""
+    await activate(hass, "scene.evening")
+    await set_dimmer(hass, LIVING, brightness_step=-100)
     assert brightness(hass, "light.lamp_a") == 100
 
 
 async def test_turn_off_and_on(hass: HomeAssistant, entry: MockConfigEntry) -> None:
     """Off turns the scene lights off; on restores them at the current factor."""
     await activate(hass, "scene.evening")
-    await set_dimmer(hass, LIVING, brightness_pct=50)
+    await set_dimmer(hass, LIVING, brightness=100)
 
     await hass.services.async_call(
         "light", "turn_off", {"entity_id": LIVING}, blocking=True
@@ -121,7 +133,7 @@ async def test_manual_change_updates_baseline(
 ) -> None:
     """A light changed by hand keeps dimming relative to its new value."""
     await activate(hass, "scene.evening")
-    await set_dimmer(hass, LIVING, brightness_pct=50)
+    await set_dimmer(hass, LIVING, brightness=100)
 
     # By hand: lamp_b to 80 at factor ~0.5 -> baseline ~160; lamp_c on at 60 -> 120.
     await hass.services.async_call(
@@ -145,13 +157,14 @@ async def test_manual_change_updates_baseline(
     assert state.attributes["modified"] is True
     assert state.attributes["baseline"] == {
         "light.lamp_a": 0,
-        "light.lamp_b": 159,
+        "light.lamp_b": 160,
         "light.lamp_c": 120,
     }
 
-    await set_dimmer(hass, LIVING, brightness_pct=100)
+    # Back to factor 1: lamp_b is now the brightest light.
+    await set_dimmer(hass, LIVING, brightness=160)
     assert brightness(hass, "light.lamp_a") is None
-    assert brightness(hass, "light.lamp_b") == 159
+    assert brightness(hass, "light.lamp_b") == 160
     assert brightness(hass, "light.lamp_c") == 120
 
     # Re-activating the scene resets the baseline.
@@ -179,16 +192,16 @@ async def test_restored_after_reload(
 ) -> None:
     """Tracking and factor survive an entry reload (store round-trip)."""
     await activate(hass, "scene.evening")
-    await set_dimmer(hass, LIVING, brightness_pct=50)
+    await set_dimmer(hass, LIVING, brightness=100)
 
     assert await hass.config_entries.async_reload(entry.entry_id)
     await hass.async_block_till_done()
 
     state = hass.states.get(LIVING)
     assert state.state == "on"
-    assert state.attributes["brightness"] == 128
+    assert state.attributes["brightness"] == 100
     assert state.attributes["active_scene"] == "scene.evening"
-    await set_dimmer(hass, LIVING, brightness_pct=25)
+    await set_dimmer(hass, LIVING, brightness=50)
     assert brightness(hass, "light.lamp_a") == 50
 
 
@@ -300,7 +313,7 @@ async def test_scene_during_dim_wins(
     await activate(hass, "scene.evening")
     hold = asyncio.Event()
     lights["lamp_a"].hold = hold
-    dim = hass.async_create_task(set_dimmer(hass, LIVING, brightness_pct=20))
+    dim = hass.async_create_task(set_dimmer(hass, LIVING, brightness=40))
     await settle()
 
     # Bright is applied while the dim command to lamp_a is still pending.
@@ -333,13 +346,13 @@ async def test_slider_drag_coalesces(
     hold = asyncio.Event()
     lights["lamp_a"].hold = hold
     with patch.object(type(lights["lamp_b"]), "async_turn_on", counting):
-        first = hass.async_create_task(set_dimmer(hass, LIVING, brightness_pct=80))
+        first = hass.async_create_task(set_dimmer(hass, LIVING, brightness=160))
         await settle()
         for pct in (60, 40, 30):
             await hass.services.async_call(
                 "light",
                 "turn_on",
-                {"entity_id": LIVING, "brightness_pct": pct},
+                {"entity_id": LIVING, "brightness": 2 * pct},
                 blocking=True,
             )
         hold.set()

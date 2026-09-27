@@ -1,4 +1,8 @@
-"""Per-area light whose brightness is the dim factor of the area's active scene."""
+"""Per-area light whose brightness is the level of the area's active scene.
+
+The level is the brightest scene light's brightness x the dim factor, so the
+scene as a whole can be brightened until that light is at 100 %.
+"""
 
 from __future__ import annotations
 
@@ -61,7 +65,7 @@ async def async_setup_entry(
 
 
 class AreaSceneLight(LightEntity):
-    """Brightness = dim factor of the area's active scene."""
+    """Brightness = level of the area's active scene (brightest light x factor)."""
 
     _attr_should_poll = False
     _attr_color_mode = ColorMode.BRIGHTNESS
@@ -101,10 +105,10 @@ class AreaSceneLight(LightEntity):
 
     @property
     def brightness(self) -> int | None:
-        """The dim factor as 0-255."""
+        """The scene level as 0-255."""
         if (area := self._tracker.get(self._area_id)) is None:
             return None
-        return max(1, round(area.factor * 255))
+        return max(1, min(255, round(area.factor * area.peak)))
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -123,9 +127,10 @@ class AreaSceneLight(LightEntity):
     async def async_turn_on(self, **kwargs: Any) -> None:
         """Dim the scene to the requested brightness, or turn it back on."""
         brightness = kwargs.get(ATTR_BRIGHTNESS)
+        area = self._tracker.get(self._area_id)
         await self._tracker.async_turn_on(
             self._area_id,
-            factor=brightness / 255 if brightness is not None else None,
+            factor=brightness / area.peak if brightness is not None and area else None,
             transition=kwargs.get(ATTR_TRANSITION),
         )
 

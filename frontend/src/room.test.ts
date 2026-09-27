@@ -45,7 +45,7 @@ describe("optimistic scene", () => {
     expect(shownLight(hass, "living", "light.b")).toMatchObject({ color: null, on: false });
     const state = roomState(hass, room);
     expect(state.activeScene).toBe("scene.red");
-    expect(state.level).toBe(1);
+    expect(state.level).toBe(200 / 255);
 
     // light.a reports: its real state wins again.
     hass.states["light.a"] = { ...hass.states["light.a"], last_updated: "t1", attributes: { brightness: 190, rgb_color: [250, 5, 5] } };

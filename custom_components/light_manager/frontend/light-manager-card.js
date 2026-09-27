@@ -977,9 +977,13 @@ function $e(e, t, n) {
 }
 function et(e) {
 	let t = $.get(e);
-	return t && Date.now() <= t.until ? t.sceneId : null;
+	return t && Date.now() <= t.until ? t : null;
 }
-function tt(e, t, n) {
+function tt(e) {
+	let t = Object.values(e).filter((e) => e.on);
+	return t.length ? Math.max(...t.map((e) => e.brightness)) / 255 : 1;
+}
+function nt(e, t, n) {
 	let r = e.states[n], i = r && r.state !== "unavailable" ? $e(e, t, n) : null;
 	return i ? {
 		color: i.on ? i.rgb ?? Ee : null,
@@ -993,31 +997,31 @@ function tt(e, t, n) {
 		state: r
 	};
 }
-function nt(e, t) {
+function rt(e, t) {
 	let n = [], r = 0;
 	for (let i of t.lights) {
-		let a = tt(e, t.area_id, i);
+		let a = nt(e, t.area_id, i);
 		a.color && (n.push(a.color), r = Math.max(r, a.brightness));
 	}
-	let i = t.dimmer ? e.states[t.dimmer] : void 0, a = !!i && i.state !== "unavailable", o = et(t.area_id), s = o && i?.attributes.active_scene !== o ? 1 : a ? (i.attributes.brightness ?? 255) / 255 : r / 255;
+	let i = t.dimmer ? e.states[t.dimmer] : void 0, a = !!i && i.state !== "unavailable", o = et(t.area_id), s = o && i?.attributes.active_scene !== o.sceneId ? tt(o.lights) : a ? (i.attributes.brightness ?? 255) / 255 : r / 255;
 	return {
 		on: n.length > 0,
 		colors: Me(n),
 		level: n.length ? s : 0,
 		dimmerAvailable: a,
-		activeScene: o ?? (a ? i.attributes.active_scene ?? null : null)
+		activeScene: o?.sceneId ?? (a ? i.attributes.active_scene ?? null : null)
 	};
 }
-function rt(e, t, n, r) {
+function it(e, t, n, r) {
 	return n.dimmerAvailable && t.dimmer ? e.callService("light", r ? "turn_on" : "turn_off", void 0, { entity_id: t.dimmer }) : e.callService("light", r ? "turn_on" : "turn_off", void 0, { entity_id: t.lights });
 }
-function it(e, t, n, r) {
+function at(e, t, n, r) {
 	let i = Math.max(1, Math.round(r * 100)), a = n.dimmerAvailable && t.dimmer ? t.dimmer : t.lights;
 	return e.callService("light", "turn_on", { brightness_pct: i }, { entity_id: a });
 }
 //#endregion
 //#region src/room-dialog.ts
-var at = class extends H {
+var ot = class extends H {
 	constructor(...e) {
 		super(...e), this._onPop = () => this.close(!1), this._onKey = (e) => e.key === "Escape" && this.close();
 	}
@@ -1038,7 +1042,7 @@ var at = class extends H {
 		this.isConnected && (this.remove(), e && history.state?.lightManagerDialog && history.back(), this.dispatchEvent(new CustomEvent("closed")));
 	}
 	render() {
-		let e = this.room, t = nt(this.hass, e);
+		let e = this.room, t = rt(this.hass, e);
 		return M`<div class="backdrop" @click=${() => this.close()}></div>
       <div class="panel" role="dialog" aria-label=${e.name}>
         <header style=${Ke(t)}>
@@ -1048,18 +1052,18 @@ var at = class extends H {
               ${Z("mdi:arrow-left")}
             </button>
             <span class="title">${e.name}</span>
-            ${Je(t, (n) => rt(this.hass, e, t, n.detail.on))}
+            ${Je(t, (n) => it(this.hass, e, t, n.detail.on))}
           </div>
-          ${qe(t, (n) => it(this.hass, e, t, n.detail.value))}
+          ${qe(t, (n) => at(this.hass, e, t, n.detail.value))}
         </header>
         <div class="body">
-          ${e.scenes.length ? M`<h3>My scenes</h3>
+          ${e.scenes.length ? M`<h3>Scenes</h3>
                 <div class="tiles">
                   ${e.scenes.map((e) => this._scene(e, e.entity_id === t.activeScene))}
                 </div>` : P}
-          ${ot(this.hass, e.lights).length ? M`<h3>Lights</h3>
+          ${st(this.hass, e.lights).length ? M`<h3>Lights</h3>
                 <div class="tiles">
-                  ${ot(this.hass, e.lights).map((e) => this._light(e))}
+                  ${st(this.hass, e.lights).map((e) => this._light(e))}
                 </div>` : P}
         </div>
       </div>`;
@@ -1069,7 +1073,7 @@ var at = class extends H {
 			255,
 			197,
 			143
-		]], r = n.length === 1 ? `radial-gradient(circle at 32% 28%, rgb(${Ae(n[0], .45).join(",")}), rgb(${n[0].join(",")}) 65%)` : `linear-gradient(135deg, ${n.map((e) => `rgb(${e.join(",")})`).join(", ")})`, i = st(e.name, this.room.name);
+		]], r = n.length === 1 ? `radial-gradient(circle at 32% 28%, rgb(${Ae(n[0], .45).join(",")}), rgb(${n[0].join(",")}) 65%)` : `linear-gradient(135deg, ${n.map((e) => `rgb(${e.join(",")})`).join(", ")})`, i = ct(e.name, this.room.name);
 		return M`<button
       class="scene ${t ? "active" : ""}"
       style=${t ? `background: ${K(n)}; color: ${q(n)}` : ""}
@@ -1088,7 +1092,7 @@ var at = class extends H {
 		this.requestUpdate(), this.card?.requestUpdate();
 	}
 	_light(e) {
-		let t = tt(this.hass, this.room.area_id, e), n = t.state, r = st(n?.attributes.friendly_name ?? e, this.room.name), i = t.color, a = t.brightness / 255, o = i ? `linear-gradient(to bottom, rgb(${W(i, a).join(",")}), rgb(${W(i, a * .7).join(",")}))` : "#3a3a3a", s = i ? `color: ${q([i], a)}` : "";
+		let t = nt(this.hass, this.room.area_id, e), n = t.state, r = ct(n?.attributes.friendly_name ?? e, this.room.name), i = t.color, a = t.brightness / 255, o = i ? `linear-gradient(to bottom, rgb(${W(i, a).join(",")}), rgb(${W(i, a * .7).join(",")}))` : "#3a3a3a", s = i ? `color: ${q([i], a)}` : "";
 		return M`<div class="light ${i ? "on" : ""}" style=${s} @click=${() => this._moreInfo(e)}>
       <lm-fade .background=${o}></lm-fade>
       <div class="top">
@@ -1289,20 +1293,20 @@ var at = class extends H {
     `];
 	}
 };
-function ot(e, t) {
+function st(e, t) {
 	return t.filter((t) => {
 		let n = e.states[t];
 		return !!n && n.state !== "unavailable";
 	});
 }
-function st(e, t) {
+function ct(e, t) {
 	let n = `${t} `;
 	return e.toLowerCase().startsWith(n.toLowerCase()) ? e.slice(n.length) : e;
 }
-customElements.get("light-manager-room-dialog") || customElements.define("light-manager-room-dialog", at);
+customElements.get("light-manager-room-dialog") || customElements.define("light-manager-room-dialog", ot);
 //#endregion
 //#region src/light-manager-card.ts
-var ct = class extends H {
+var lt = class extends H {
 	static {
 		this.properties = {
 			hass: { attribute: !1 },
@@ -1341,15 +1345,15 @@ var ct = class extends H {
 	render() {
 		if (this._error) return M`<ha-card class="error">Light Manager: ${this._error}</ha-card>`;
 		if (!this._room || !this.hass) return M`<ha-card class="loading"></ha-card>`;
-		let e = this._room, t = nt(this.hass, e);
+		let e = this._room, t = rt(this.hass, e);
 		return M`<ha-card style=${Ke(t)} @click=${this._open}>
       <lm-fade .background=${Ge(t)}></lm-fade>
       <div class="row">
         <span class="icon">${Z(this._config.icon ?? e.icon ?? "mdi:sofa")}</span>
         <span class="name">${this._config.name ?? e.name}</span>
-        ${Je(t, (n) => rt(this.hass, e, t, n.detail.on))}
+        ${Je(t, (n) => it(this.hass, e, t, n.detail.on))}
       </div>
-      ${qe(t, (n) => it(this.hass, e, t, n.detail.value))}
+      ${qe(t, (n) => at(this.hass, e, t, n.detail.value))}
     </ha-card>`;
 	}
 	willUpdate(e) {
@@ -1416,10 +1420,10 @@ var ct = class extends H {
     `];
 	}
 };
-customElements.get("light-manager-card") || customElements.define("light-manager-card", ct), window.customCards = window.customCards || [], window.customCards.push({
+customElements.get("light-manager-card") || customElements.define("light-manager-card", lt), window.customCards = window.customCards || [], window.customCards.push({
 	type: "light-manager-card",
 	name: "Light Manager room",
 	description: "A room colored by its lights, with the Light Manager scene dimmer"
 });
 //#endregion
-export { ct as LightManagerCard };
+export { lt as LightManagerCard };

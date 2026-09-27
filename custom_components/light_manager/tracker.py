@@ -109,6 +109,15 @@ class AreaScene:
     factor: float = 1.0
     modified: bool = False
 
+    @property
+    def peak(self) -> int:
+        """Brightness of the scene's brightest light: the scene's own level.
+
+        The dimmer shows factor x peak, so a scene whose brightest light is at
+        50 % starts at 50 % and can be brightened up to 255 / peak.
+        """
+        return max((tl.baseline for tl in self.lights.values() if tl.on), default=255)
+
     def as_dict(self) -> dict[str, Any]:
         """Serialise for the store."""
         return {
@@ -429,6 +438,8 @@ class SceneTracker:
     ) -> None:
         """Set the scene's lights to baseline x factor (turning them on).
 
+        factor may exceed 1, up to where the brightest light reaches 255.
+
         One dim per area runs at a time; requests arriving meanwhile (a slider
         being dragged) only update the factor, and the running dim sends the
         latest one when it is done, so commands don't pile up on the bridge.
@@ -437,7 +448,7 @@ class SceneTracker:
             _LOGGER.warning("No scene has been applied to area %s yet", area_id)
             return
         if factor is not None:
-            area.factor = max(1 / 255, min(1.0, factor))
+            area.factor = max(1 / 255, min(255 / area.peak, factor))
             self._schedule_save()
         self._notify(area_id)
         if area_id in self._dimming:
@@ -592,9 +603,9 @@ class SceneTracker:
         if previous is None:
             self._notify_areas_changed()
         elif previous.scene_entity_id == entity_id and (
-            previous.factor < 1 or previous.modified
+            previous.factor != 1 or previous.modified
         ):
-            # Re-applying a dimmed or changed Hue scene leaves the lights as
+            # Re-applying a dimmed, brightened or changed Hue scene leaves the lights as
             # they are: the bridge re-applies the scene at the current dim
             # level. Once the bridge is done, restore the scene brightness.
             self._schedule_restore(area_id)
@@ -620,8 +631,8 @@ class SceneTracker:
         force: set every light, whatever its reported state (Hue reports
         arrive 1-4 s after a command, so the state may not show it yet).
         """
-        # Dimmed again meanwhile: leave it.
-        if (area := self._areas.get(area_id)) is None or area.factor < 1:
+        # Dimmed or brightened again meanwhile: leave it.
+        if (area := self._areas.get(area_id)) is None or area.factor != 1:
             _LOGGER.debug("Scene restore for area %s skipped", area_id)
             return
         calls = []

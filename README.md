@@ -1,12 +1,12 @@
 # Light Manager
 
-A Home Assistant integration that remembers which scene was last applied to each area. It adds one dimmable light per area. Dimming that light dims all of the scene's lights **relative to their brightness in the scene**: with lamp A at 200 and lamp B at 100 in the scene, 50 % gives A=100 and B=50.
+A Home Assistant integration that remembers which scene was last applied to each area. It adds one dimmable light per area. Dimming that light dims all of the scene's lights **relative to their brightness in the scene**: with lamp A at 200 and lamp B at 100 in the scene, the dimmer starts at the brightest lamp's level (200, 78 %); setting it to 100 gives A=100 and B=50, and 255 gives A=255 and B=128, so a scene can also be made brighter than it was saved.
 
 ## How it works
 
 - **Scenes:** Home Assistant scenes (scene editor or `scenes.yaml`) and Hue scenes. For a Hue scene the per-light targets come from the scene on the bridge, and a scene recalled from the Hue app or a Hue switch is picked up too. Other integrations' scenes, Hue smart scenes and `scene.create` snapshots are ignored.
 - **Area:** the scene entity's area, or else the area most of the scene's lights are in.
-- **Dimmer:** `light.<area>_scene`, e.g. `light.living_room_scene`. Brightness = the dim factor. Activating a scene resets it to 100 %. `brightness_step_pct` works, so dimmer-switch blueprints can drive it. Off turns the scene's lights off; on brings them back at the current factor. Colour and colour temperature are left alone.
+- **Dimmer:** `light.<area>_scene`, e.g. `light.living_room_scene`. Brightness = the scene's brightest light × the dim factor. Activating a scene resets it to that light's brightness; it can go up to 100 % (brightest light at 255). `brightness_step_pct` works, so dimmer-switch blueprints can drive it. Off turns the scene's lights off; on brings them back at the current factor. Colour and colour temperature are left alone.
 - **Manual changes:** a scene light changed outside the dimmer gets that brightness (÷ the current factor) as its new scene value. A light turned off stays out until the scene is applied again. The dimmer's `modified` attribute shows this.
 - **Attributes:** `active_scene`, `scene_activated_at`, `modified`, `baseline` (per light, 0 = off).
 - The dimmer is not assigned to the area on purpose. Otherwise `light.turn_on` with an `area_id` target would set both the real lights and the dimmer.

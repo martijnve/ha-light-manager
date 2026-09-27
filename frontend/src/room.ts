@@ -49,9 +49,15 @@ export function expected(hass: HomeAssistant, areaId: string, entityId: string):
   return target;
 }
 
-function pendingScene(areaId: string): string | null {
+function pending(areaId: string): Optimistic | null {
   const o = optimistic.get(areaId);
-  return o && Date.now() <= o.until ? o.sceneId : null;
+  return o && Date.now() <= o.until ? o : null;
+}
+
+/** A scene's own level 0..1: its brightest light (as the dimmer shows it). */
+export function sceneLevel(lights: Record<string, SceneLight>): number {
+  const on = Object.values(lights).filter((l) => l.on);
+  return on.length ? Math.max(...on.map((l) => l.brightness)) / 255 : 1;
 }
 
 /** A light's state as shown: the scene's target while it hasn't reported yet. */
@@ -99,11 +105,11 @@ export function roomState(hass: HomeAssistant, room: Room): RoomState {
   }
   const dimmer = room.dimmer ? hass.states[room.dimmer] : undefined;
   const dimmerAvailable = !!dimmer && dimmer.state !== "unavailable";
-  const pending = pendingScene(room.area_id);
-  // A newly applied scene starts at 100 %.
+  const tapped = pending(room.area_id);
+  // A newly applied scene starts at its brightest light's level.
   const level =
-    pending && dimmer?.attributes.active_scene !== pending
-      ? 1
+    tapped && dimmer?.attributes.active_scene !== tapped.sceneId
+      ? sceneLevel(tapped.lights)
       : dimmerAvailable
         ? (dimmer!.attributes.brightness ?? 255) / 255
         : maxBrightness / 255;
@@ -112,7 +118,7 @@ export function roomState(hass: HomeAssistant, room: Room): RoomState {
     colors: distinct(colors),
     level: colors.length ? level : 0,
     dimmerAvailable,
-    activeScene: pending ?? (dimmerAvailable ? dimmer!.attributes.active_scene ?? null : null),
+    activeScene: tapped?.sceneId ?? (dimmerAvailable ? dimmer!.attributes.active_scene ?? null : null),
   };
 }
 
