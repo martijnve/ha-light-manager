@@ -46,7 +46,6 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import label_registry as lr
 from homeassistant.helpers.event import (
     TrackStates,
-    async_call_later,
     async_track_state_change_filtered,
 )
 from homeassistant.helpers.start import async_at_started
@@ -79,9 +78,6 @@ _LOGGER = logging.getLogger(__name__)
 SCENE_DOMAIN = "scene"
 HA_SCENE_PLATFORM = "homeassistant"
 _INVALID_STATES = (STATE_UNAVAILABLE, STATE_UNKNOWN)
-# After re-applying a dimmed scene, wait this long for the Hue bridge to finish
-# its recall before restoring the scene brightness (the bridge reported ~1.2 s).
-RESTORE_DELAY_SECONDS = 2.0
 # A Hue scene activated through HA is reported twice: first by the HA scene
 # state change, then by the bridge's recall event. Skip the second.
 _DUPLICATE_ACTIVATION_SECONDS = 5.0
@@ -250,8 +246,6 @@ class SceneTracker:
         self._hue = HueRecallWatcher(self._on_hue_recall)
         # scene entity id -> monotonic time of its last activation through HA
         self._last_ha_activation: dict[str, float] = {}
-        # area id -> cancel callback of a scheduled scene restore
-        self._pending_restores: dict[str, CALLBACK_TYPE] = {}
         # areas with a dim in progress, and the transition of a dim requested
         # meanwhile
         self._dimming: set[str] = set()
@@ -300,8 +294,6 @@ class SceneTracker:
         """Stop listening."""
         while self._unsubs:
             self._unsubs.pop()()
-        while self._pending_restores:
-            self._pending_restores.popitem()[1]()
         self._hue.async_stop()
 
     async def async_save_now(self) -> None:
@@ -462,7 +454,7 @@ class SceneTracker:
                     # A scene was applied while we were dimming; our commands
                     # may have reached the lights after it. Put the scene back.
                     _LOGGER.debug("Scene applied during a dim of area %s", area_id)
-                    await self.async_restore_scene(area_id, force=True)
+                    await self.async_restore_scene(area_id)
                     return
                 if area_id not in self._dim_again:
                     return
@@ -600,36 +592,16 @@ class SceneTracker:
         self._rebuild_light_index()
         self._schedule_save()
         self._notify(area_id)
+        # Re-applying the active scene is left to the bridge or HA: it sets
+        # the scene values itself, also after a dim.
         if previous is None:
             self._notify_areas_changed()
-        elif previous.scene_entity_id == entity_id and (
-            previous.factor != 1 or previous.modified
-        ):
-            # Re-applying a dimmed, brightened or changed Hue scene leaves the lights as
-            # they are: the bridge re-applies the scene at the current dim
-            # level. Once the bridge is done, restore the scene brightness.
-            self._schedule_restore(area_id)
 
-    @callback
-    def _schedule_restore(self, area_id: str) -> None:
-        _LOGGER.debug("Scheduling a scene restore for area %s", area_id)
-        if cancel := self._pending_restores.pop(area_id, None):
-            cancel()
+    async def async_restore_scene(self, area_id: str) -> None:
+        """Set every light of the area's scene back to its scene value.
 
-        @callback
-        def _restore(_now: Any) -> None:
-            self._pending_restores.pop(area_id, None)
-            self.hass.async_create_task(self.async_restore_scene(area_id))
-
-        self._pending_restores[area_id] = async_call_later(
-            self.hass, RESTORE_DELAY_SECONDS, _restore
-        )
-
-    async def async_restore_scene(self, area_id: str, force: bool = False) -> None:
-        """Set lights that are off their scene values back to them.
-
-        force: set every light, whatever its reported state (Hue reports
-        arrive 1-4 s after a command, so the state may not show it yet).
+        Whatever the lights report: Hue reports arrive 1-4 s after a command,
+        so the state may not show the latest one yet.
         """
         # Dimmed or brightened again meanwhile: leave it.
         if (area := self._areas.get(area_id)) is None or area.factor != 1:
@@ -641,21 +613,13 @@ class SceneTracker:
             if state is None or state.state in _INVALID_STATES:
                 continue
             if tl.on:
-                brightness = state.attributes.get(ATTR_BRIGHTNESS)
-                if (
-                    not force
-                    and state.state == STATE_ON
-                    and brightness is not None
-                    and abs(brightness - tl.baseline) <= BRIGHTNESS_TOLERANCE
-                ):
-                    continue
                 calls.append(
                     (
                         SERVICE_TURN_ON,
                         {ATTR_ENTITY_ID: eid, ATTR_BRIGHTNESS: tl.baseline},
                     )
                 )
-            elif force or state.state == STATE_ON:
+            else:
                 calls.append((SERVICE_TURN_OFF, {ATTR_ENTITY_ID: eid}))
         _LOGGER.debug(
             "Scene restore for area %s: %s",
@@ -706,7 +670,10 @@ class SceneTracker:
                 return False
             tl.on = False
         elif new.state == STATE_ON:
-            brightness = new.attributes.get(ATTR_BRIGHTNESS) or 255
+            brightness = new.attributes.get(ATTR_BRIGHTNESS)
+            # No brightness: an on/off light. Hue reports its lowest level
+            # (v1 bri 1, v2 dimming 0.0 %) as brightness 0.
+            brightness = 255 if brightness is None else max(1, brightness)
             if (
                 tl.on
                 and abs(brightness - tl.target(area.factor)) <= BRIGHTNESS_TOLERANCE

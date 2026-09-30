@@ -165,13 +165,13 @@ async def test_recalled_outside_ha(
     assert hass.states.get(LIVING).attributes["brightness"] == 102
 
 
-async def test_reapply_dimmed_scene_restores_it(
+async def test_reapply_dimmed_scene_left_to_the_bridge(
     hass: HomeAssistant, controller: FakeScenesController
 ) -> None:
-    """Re-applying the active scene after dimming restores its brightness.
+    """Re-applying the active scene after dimming sends no commands of our own.
 
-    The Hue bridge ignores a recall of the scene it considers active (the fake
-    scene's activation does nothing, like the bridge), so we set the lights.
+    The bridge sets the scene values itself (the fake scene's activation does
+    nothing, so the lamps stay where the dim left them).
     """
 
     async def activate() -> None:
@@ -186,17 +186,37 @@ async def test_reapply_dimmed_scene_restores_it(
 
     await activate()
     await dim(hass, 102)
-    assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
-
     await activate()
-    # Not straight away: the bridge is still busy with its recall.
-    assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
-    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=3))
+    async_fire_time_changed(hass, dt_util.utcnow() + timedelta(seconds=5))
     await hass.async_block_till_done()
-    assert hass.states.get("light.lamp_a").attributes["brightness"] == 204
-    assert hass.states.get("light.lamp_b").state == "off"
+    assert hass.states.get("light.lamp_a").attributes["brightness"] == 102
+    assert hass.states.get(LIVING).attributes["modified"] is False
+
+
+async def test_recall_at_lowest_level(
+    hass: HomeAssistant, controller: FakeScenesController, lights: dict[str, MockLight]
+) -> None:
+    """A lamp at Hue's lowest level reports brightness 0: that is 1, not 255.
+
+    Nightlight scenes have dimming 0.0 %; reading the lamps' reports as 255
+    marked the scene modified and made a later recall restore it to 255.
+    """
+    from homeassistant.components.scene import DATA_COMPONENT
+
+    entity = hass.data[DATA_COMPONENT].get_entity(HUE_SCENE)
+    entity.resource.actions[0].action.dimming = DimmingFeatureBase(brightness=0.0)
+    controller.emit(hue_scene(T0 + timedelta(minutes=1)))
+    await hass.async_block_till_done()
+
+    # The bridge turns the lamp on at its lowest level.
+    lamp = lights["lamp_a"]
+    lamp._attr_is_on = True
+    lamp._attr_brightness = 0
+    lamp.async_write_ha_state()
+    await hass.async_block_till_done()
+
     state = hass.states.get(LIVING)
-    assert state.attributes["brightness"] == 204
+    assert state.attributes["baseline"]["light.lamp_a"] == 1
     assert state.attributes["modified"] is False
 
 
